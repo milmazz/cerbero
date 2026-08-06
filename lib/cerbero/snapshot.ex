@@ -236,7 +236,8 @@ defmodule Cerbero.Snapshot do
 
   defp decode_index(i) do
     with :ok <- strict(i, @index_fields, "index #{i["name"]}"),
-         {:ok, keys} <- map_while_ok(i["keys"], &decode_key/1) do
+         {:ok, keys} <-
+           validate_list(i["keys"], "index.keys", fn l -> map_while_ok(l, &decode_key/1) end) do
       {:ok,
        %{
          name: i["name"],

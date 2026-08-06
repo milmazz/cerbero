@@ -92,5 +92,20 @@ defmodule Cerbero.SnapshotDecodeTest do
 
       assert {:error, {:invalid_value, _, :not_a_list}} = Snapshot.decode(raw)
     end
+
+    test "returns error, not crash, when index keys is nil" do
+      raw =
+        build(%{
+          "tables" => [
+            table("events", %{
+              "indexes" => [
+                index("idx_id", ["id"], %{"keys" => nil})
+              ]
+            })
+          ]
+        })
+
+      assert {:error, {:invalid_value, _, :not_a_list}} = Snapshot.decode(raw)
+    end
   end
 end
