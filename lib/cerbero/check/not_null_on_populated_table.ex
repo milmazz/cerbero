@@ -12,11 +12,19 @@ defmodule Cerbero.Check.NotNullOnPopulatedTable do
 
   @impl true
   def run(migration, catalog, config) do
-    migration.operations
-    |> Enum.flat_map(&set_not_null_targets/1)
-    |> Enum.flat_map(fn {table, column, line} ->
-      judge(table, column, line, migration, catalog, config)
-    end)
+    {findings, _} =
+      Enum.reduce(migration.operations, {[], catalog}, fn op, {findings, current_catalog} ->
+        new_findings =
+          set_not_null_targets(op)
+          |> Enum.flat_map(fn {table, column, line} ->
+            judge(table, column, line, migration, current_catalog, config)
+          end)
+
+        updated_catalog = Catalog.apply(current_catalog, op)
+        {findings ++ new_findings, updated_catalog}
+      end)
+
+    findings
   end
 
   defp set_not_null_targets(%Op.AlterTable{table: t, ops: ops, line: line}) do
@@ -35,6 +43,9 @@ defmodule Cerbero.Check.NotNullOnPopulatedTable do
     qualified = Catalog.qualify(table)
 
     cond do
+      Catalog.born?(catalog, table) and not Catalog.backfilled?(catalog, table) ->
+        []
+
       match?(%{not_null: true}, Catalog.column(catalog, table, column)) ->
         []
 

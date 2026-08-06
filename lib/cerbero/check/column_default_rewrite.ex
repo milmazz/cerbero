@@ -11,63 +11,123 @@ defmodule Cerbero.Check.ColumnDefaultRewrite do
 
   @impl true
   def run(migration, catalog, config) do
-    migration.operations
-    |> Enum.flat_map(&Effects.derive(&1, catalog.engine, catalog.version_num))
-    |> Enum.filter(&(&1.class in [:add_column_volatile_default, :add_column_generated_stored]))
-    |> Enum.flat_map(fn effect ->
-      table = Keyword.get(effect.relations, :target)
-      scale = Catalog.scale(catalog, table)
-      traffic = Catalog.traffic(catalog, table, config)
+    {findings, _} =
+      Enum.reduce(migration.operations, {[], catalog}, fn op, {findings, current_catalog} ->
+        new_findings =
+          op
+          |> Effects.derive(current_catalog.engine, current_catalog.version_num)
+          |> Enum.filter(
+            &(&1.class in [:add_column_volatile_default, :add_column_generated_stored])
+          )
+          |> Enum.flat_map(fn effect ->
+            judge(effect, migration, current_catalog, config)
+          end)
 
-      what =
-        case effect.class do
-          :add_column_volatile_default ->
-            "a volatile default"
+        updated_catalog = Catalog.apply(current_catalog, op)
+        {findings ++ new_findings, updated_catalog}
+      end)
 
-          :add_column_generated_stored ->
-            "a GENERATED ... STORED column (rewrites on every PG version)"
-        end
+    findings
+  end
 
-      severity =
-        Severity.assess(:access_exclusive, :rewrite, scale, traffic, config, catalog.multiplier)
+  defp judge(effect, migration, catalog, config) do
+    table = Keyword.get(effect.relations, :target)
 
-      case {catalog.engine, severity} do
-        {_, :none} ->
-          []
+    cond do
+      table == nil ->
+        []
 
-        {:cockroachdb, sev} ->
-          # CRDB online backfill doesn't block writes; cap at :warning
-          sev = if sev == :error, do: :warning, else: sev
+      Catalog.born?(catalog, table) and not Catalog.backfilled?(catalog, table) ->
+        []
 
-          [
-            Helpers.finding(
-              __MODULE__,
-              sev,
-              "adding a column with #{what} on #{Catalog.qualify(table)} " <>
-                "(#{Helpers.describe_scale(catalog, table)}) triggers an online backfill that consumes " <>
-                "cluster resources at scale",
-              migration,
-              effect.line,
-              relations: [Catalog.qualify(table)],
-              engine: :cockroachdb
-            )
-          ]
+      catalog.engine == :cockroachdb ->
+        crdb_finding(effect, table, migration, catalog, config)
 
-        {:postgres, sev} ->
-          [
-            Helpers.finding(
-              __MODULE__,
-              sev,
-              "adding a column with #{what} forces a full-table rewrite of #{Catalog.qualify(table)} " <>
-                "(#{Helpers.describe_scale(catalog, table)}) under ACCESS EXCLUSIVE. " <>
-                "Add the column without the default, backfill in batches, then set the default",
-              migration,
-              effect.line,
-              relations: [Catalog.qualify(table)],
-              engine: :postgres
-            )
-          ]
+      true ->
+        postgres_finding(effect, table, migration, catalog, config)
+    end
+  end
+
+  defp postgres_finding(effect, table, migration, catalog, config) do
+    what =
+      case effect.class do
+        :add_column_volatile_default ->
+          "a volatile default"
+
+        :add_column_generated_stored ->
+          "a GENERATED ... STORED column (rewrites on every PG version)"
       end
-    end)
+
+    scale = Catalog.scale(catalog, table)
+    traffic = Catalog.traffic(catalog, table, config)
+
+    severity =
+      Severity.assess(:access_exclusive, :rewrite, scale, traffic, config, catalog.multiplier)
+
+    if severity == :none do
+      []
+    else
+      [
+        Helpers.finding(
+          __MODULE__,
+          severity,
+          "adding a column with #{what} forces a full-table rewrite of #{Catalog.qualify(table)} " <>
+            "(#{Helpers.describe_scale(catalog, table)}) under ACCESS EXCLUSIVE. " <>
+            "Add the column without the default, backfill in batches, then set the default",
+          migration,
+          effect.line,
+          relations: [Catalog.qualify(table)],
+          engine: :postgres
+        )
+      ]
+    end
+  end
+
+  defp crdb_finding(effect, table, migration, catalog, config) do
+    what =
+      case effect.class do
+        :add_column_volatile_default ->
+          "a volatile default"
+
+        :add_column_generated_stored ->
+          "a GENERATED ... STORED column (rewrites on every version)"
+      end
+
+    with {:rows, rows, _} <- Catalog.scale(catalog, table),
+         true <- rows >= config.rows_warning * catalog.multiplier do
+      severity = if rows >= config.rows_error * catalog.multiplier, do: :warning, else: :info
+
+      [
+        Helpers.finding(
+          __MODULE__,
+          severity,
+          "adding a column with #{what} on #{Catalog.qualify(table)} " <>
+            "(#{Helpers.describe_scale(catalog, table)}) triggers an online backfill that consumes " <>
+            "cluster resources at scale",
+          migration,
+          effect.line,
+          relations: [Catalog.qualify(table)],
+          engine: :cockroachdb
+        )
+      ]
+    else
+      :unknown ->
+        [
+          Helpers.finding(
+            __MODULE__,
+            :warning,
+            "adding a column with #{what} on #{Catalog.qualify(table)} " <>
+              "(scale unknown — treated as unbounded) triggers an online backfill that consumes " <>
+              "cluster resources at scale",
+            migration,
+            effect.line,
+            relations: [Catalog.qualify(table)],
+            engine: :cockroachdb
+          )
+        ]
+
+      _ ->
+        []
+    end
   end
 end

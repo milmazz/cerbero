@@ -68,5 +68,21 @@ defmodule Cerbero.Check.NotNullTest do
              judge_rule([t], ~s|execute "ALTER TABLE events ALTER COLUMN org_id SET NOT NULL"|)
   end
 
+  test "silent when table is born in this migration, unbackfilled" do
+    # Create table and modify column in same migration: should be silent (born_this_deploy rule)
+    assert [] =
+             judge_rule(
+               [],
+               """
+               create table(:new_events) do
+                 add :status, :string
+               end
+               alter table(:new_events) do
+                 modify :status, :string, null: false
+               end
+               """
+             )
+  end
+
   def in_alter(body, table), do: "alter table(:#{table}) do\n #{body}\n end"
 end

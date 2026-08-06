@@ -44,4 +44,32 @@ defmodule Cerbero.Check.DefaultRewriteTest do
     assert msg =~ "backfill"
     refute msg =~ "ACCESS EXCLUSIVE"
   end
+
+  test "CRDB: small table with volatile default is silent" do
+    crdb = %{"engine" => %{"name" => "cockroachdb", "version" => "25.1", "version_num" => 25_100}}
+    small = table("events", %{"n_live_tup" => 100, "reltuples" => 100.0})
+
+    assert [] =
+             judge_rule(
+               [small],
+               alter_events(~s|add :token, :uuid, default: fragment("gen_random_uuid()")|),
+               snapshot: crdb
+             )
+  end
+
+  test "silent when table is born in this migration, unbackfilled" do
+    # Create table and add volatile-default column in same migration: should be silent (born_this_deploy rule)
+    assert [] =
+             judge_rule(
+               [],
+               """
+               create table(:new_events) do
+                 add :id, :bigint, primary_key: true
+               end
+               alter table(:new_events) do
+                 add :token, :uuid, default: fragment("gen_random_uuid()")
+               end
+               """
+             )
+  end
 end
