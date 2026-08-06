@@ -63,7 +63,7 @@ knowledge:
 | Type change | cannot see the current type | `varchar(50)→varchar(255)`: info note only (lock_timeout caveat), never blocks CI; `int→bigint` on 412M rows: error, with the index rebuilds named |
 | FK without index | cannot know | rule impossible without the catalog |
 | ADD FOREIGN KEY | flags the statement | names the *referenced* table whose writes block while the referencing table is scanned |
-| CockroachDB | n/a | engine-conditional verdicts + the CRDB limitation table (rejects before your deploy does) |
+| CockroachDB | n/a | engine-conditional verdicts + the CRDB limitation table (verified against a live node: catches true in-transaction rejections, flags the rest — e.g. type changes — as limitation/cost caveats, not blanket rejections) |
 | Invalid index in prod, stale stats, history divergence | n/a | `snapshot_health` |
 | Adoption on a 400-migration repo | re-annotate history | pending-only: zero findings at adoption |
 
