@@ -41,15 +41,18 @@ defmodule Cerbero.DDL.Locks do
   }
 
   @spec classes() :: [atom()]
-  def classes, do: Map.keys(@pg) ++ [:detach_partition]
+  def classes, do: Map.keys(@pg) ++ [:detach_partition, :detach_partition_concurrently]
 
   @spec entry(atom(), :postgres | :cockroachdb, integer()) ::
           {Cerbero.DDL.Effect.lock(), Cerbero.DDL.Effect.cost()} | :unmapped
-  def entry(:detach_partition, :postgres, version_num)
-      when version_num >= 140_000 and version_num < 150_000,
+  def entry(:detach_partition, :postgres, _version_num),
+    do: {:access_exclusive, :metadata_only}
+
+  def entry(:detach_partition_concurrently, :postgres, version_num)
+      when version_num >= 140_000,
       do: {:share_update_exclusive, :metadata_only}
 
-  def entry(:detach_partition, :postgres, _version_num),
+  def entry(:detach_partition_concurrently, :postgres, _version_num),
     do: {:access_exclusive, :metadata_only}
 
   def entry(class, :postgres, _version_num), do: Map.get(@pg, class, :unmapped)

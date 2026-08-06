@@ -5,13 +5,17 @@ defmodule Cerbero.DDL.Effects do
   alias Cerbero.Operation, as: Op
   alias Cerbero.SQL.Classifier.Classified
 
-  @doc "Every class this module can emit — checked against Locks by the totality test."
+  @doc """
+  Every class this module can emit — checked against Locks by the totality test.
+  Excludes :add_primary_key and :set_default which have Locks entries but are not currently
+  emitted by any classification path (reserved for future classifiers).
+  """
   def classes_emitted do
     ~w(create_table create_index create_index_concurrently drop_index drop_index_concurrently
        add_column_constant_default add_column_volatile_default add_column_generated_stored
-       add_primary_key add_unique set_not_null add_check add_check_not_valid validate_check
+       add_unique set_not_null add_check add_check_not_valid validate_check
        add_foreign_key add_foreign_key_not_valid validate_foreign_key alter_column_type
-       truncate reindex reindex_concurrently drop_column drop_table rename set_default
+       truncate reindex reindex_concurrently drop_column drop_table rename
        dml_update dml_delete dml_insert_select)a
   end
 
@@ -92,12 +96,22 @@ defmodule Cerbero.DDL.Effects do
   defp classify(_other), do: [{:unknown_operation, []}]
 
   defp alter_class({:add_column, _name, {:references, ref, _}, opts}, t) do
-    [
+    fk = [
       {if(Keyword.get(opts, :validate, true),
          do: :add_foreign_key,
          else: :add_foreign_key_not_valid
        ), [target: t, referenced: ref]}
     ]
+
+    col_effects = add_column_class(opts, t)
+
+    # Suppress the plain add_column_constant_default (metadata-only) since the FK
+    # effect already covers the column add when there's no volatile default/generated.
+    # But keep volatile_default and generated_stored since they signal rewrite operations.
+    case col_effects do
+      [{:add_column_constant_default, _}] -> fk
+      other -> fk ++ other
+    end
   end
 
   defp alter_class({:add_column, _name, _type, opts}, t), do: add_column_class(opts, t)

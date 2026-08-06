@@ -97,4 +97,32 @@ defmodule Cerbero.DDL.EffectsTest do
     [%Effect{notes: notes}] = effects(migration("create index(:events, [:org_id])"))
     assert Enum.any?(notes, &(&1 =~ "assuming PG 15"))
   end
+
+  test "FK column with volatile default emits both add_foreign_key and add_column_volatile_default" do
+    assert [
+             %Effect{class: :add_foreign_key, lock: :share_row_exclusive},
+             %Effect{class: :add_column_volatile_default, cost: :rewrite}
+           ] =
+             effects(
+               migration("""
+               alter table(:events) do
+                 add :org_id, references(:orgs), default: fragment("gen_random_uuid()")
+               end
+               """)
+             )
+  end
+
+  test "FK column with generated option emits both add_foreign_key and add_column_generated_stored" do
+    assert [
+             %Effect{class: :add_foreign_key, lock: :share_row_exclusive},
+             %Effect{class: :add_column_generated_stored, cost: :rewrite}
+           ] =
+             effects(
+               migration("""
+               alter table(:events) do
+                 add :org_id, references(:orgs), generated: :always
+               end
+               """)
+             )
+  end
 end

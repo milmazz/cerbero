@@ -42,6 +42,25 @@ defmodule Cerbero.DDL.LocksTest do
     end
   end
 
+  test "detach_partition is always AEL; detach_partition_concurrently is SUE on PG >= 14" do
+    # plain DETACH PARTITION
+    assert Locks.entry(:detach_partition, :postgres, 130_000) ==
+             {:access_exclusive, :metadata_only}
+
+    assert Locks.entry(:detach_partition, :postgres, 150_000) ==
+             {:access_exclusive, :metadata_only}
+
+    # DETACH PARTITION CONCURRENTLY (introduced PG 14)
+    assert Locks.entry(:detach_partition_concurrently, :postgres, 130_000) ==
+             {:access_exclusive, :metadata_only}
+
+    assert Locks.entry(:detach_partition_concurrently, :postgres, 140_000) ==
+             {:share_update_exclusive, :metadata_only}
+
+    assert Locks.entry(:detach_partition_concurrently, :postgres, 150_000) ==
+             {:share_update_exclusive, :metadata_only}
+  end
+
   test "totality: every class Effects can emit has a Locks entry for postgres" do
     for class <- Effects.classes_emitted() do
       assert Locks.entry(class, :postgres, 150_000) != :unmapped,
