@@ -3,6 +3,13 @@ defmodule Cerbero.Snapshot.Exporter do
   Builds a raw snapshot map from a live connection (or a DBA-returned
   file). Session is read-only with a short statement_timeout — defense in
   depth, not the privacy mechanism (that is the Queries allowlist).
+
+  CRDB row-count honesty: `crdb_internal.table_row_statistics.estimated_row_count`
+  reads a literal `0` (not NULL) for a table with no propagated statistics
+  yet — see `crdb_row_counts/2` and `Queries`'s moduledoc note for the
+  full reasoning. A `0` is mapped to `nil` here, never forwarded as a real
+  row count, so `Cerbero.Catalog.scale/2` reads it as unknown (unbounded),
+  never a fabricated zero.
   """
 
   alias Cerbero.Snapshot.Exporter.Queries
@@ -87,8 +94,21 @@ defmodule Cerbero.Snapshot.Exporter do
   # scale rule silently passed). crdb_internal.table_row_statistics is the
   # engine's own row-count estimate (design §1); wiring it into n_live_tup
   # during assembly gives CRDB tables a real signal instead of a lie.
-  # `estimated_row_count` is itself nullable until `CREATE STATISTICS` (or
-  # auto stats) has run for a table — that nil is preserved, never zeroed.
+  #
+  # CRDB limitation, confirmed empirically against a live v25.1 node:
+  # `estimated_row_count` is NOT NULL-until-collected the way it first
+  # appears — it reads a literal `0` for a table with no propagated
+  # statistics, indistinguishable from a genuinely empty table, and this
+  # persisted for several seconds after `CREATE STATISTICS` completed
+  # (some internal cache/propagation lag beyond the statement's own
+  # commit). A `0` here is therefore treated the same as "no signal" —
+  # mapped to nil, not forwarded as a real zero — so a fresh CRDB table
+  # with real rows never exports a fabricated `n_live_tup: 0` while its
+  # statistics are still catching up. The cost: a *genuinely* empty CRDB
+  # table also reads as unknown-scale (noisy — Catalog treats it as
+  # unbounded) rather than confidently zero. That is the design's stated
+  # direction ("unknown scale = unbounded, never small") — noisy but safe
+  # beats confidently wrong.
   # Keyed by bare table name (the view has no schema column); a
   # same-named table in two configured schemas could collide, an accepted
   # limitation for a spike whose default (and typical) config is a single
@@ -97,7 +117,10 @@ defmodule Cerbero.Snapshot.Exporter do
     conn
     |> q!(Queries.crdb_row_counts())
     |> rows()
-    |> Map.new(fn [name, count] -> {name, count} end)
+    |> Map.new(fn
+      [name, 0] -> {name, nil}
+      [name, count] -> {name, count}
+    end)
   end
 
   defp crdb_row_counts(_conn, _postgres), do: %{}

@@ -75,6 +75,25 @@ defmodule Cerbero.CatalogTest do
     assert Catalog.scale(cat, "events") == :unknown
   end
 
+  test "CRDB-engine snapshot: nil/nil row is :unknown, never zero" do
+    # Same shape as the exporter now produces for a CRDB table whose
+    # `estimated_row_count` was a literal 0 (indistinguishable from "no
+    # stats yet") — Cerbero.Snapshot.Exporter.crdb_row_counts/2 maps that
+    # 0 to nil before it ever reaches the catalog, so this is what a fresh
+    # CRDB table looks like at judgment time.
+    crdb_engine = %{
+      "engine" => %{"name" => "cockroachdb", "version" => "25.1", "version_num" => 25_100}
+    }
+
+    cat =
+      catalog(
+        [table("events", %{"reltuples" => nil, "n_live_tup" => nil})],
+        crdb_engine
+      )
+
+    assert Catalog.scale(cat, "events") == :unknown
+  end
+
   test "reltuples nil but n_live_tup known: falls back to n_live_tup, not :unknown" do
     cat = catalog([table("events", %{"reltuples" => nil, "n_live_tup" => 3_000})])
     assert {:rows, 3_000, _} = Catalog.scale(cat, "events")

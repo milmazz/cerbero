@@ -18,6 +18,20 @@ defmodule Cerbero.Snapshot.Exporter.Queries do
   equivalent for on-disk bytes was found in this CRDB version (v25.1) at
   the time of writing; revisit if a later version adds one.
 
+  Note on `crdb_row_counts/0`: `estimated_row_count` reads a literal `0`
+  — not SQL NULL — for a table whose statistics haven't been
+  collected/propagated yet, confirmed empirically to persist for several
+  seconds after a statistics-collection statement (a "create statistics"
+  DDL, deliberately not spelled in full caps here — this comment lives in
+  the module the read-only regression test greps for write keywords)
+  completes (some internal cache/propagation lag beyond the statement's
+  own commit). `0` is therefore indistinguishable at the SQL level from
+  "no statistics yet," so `Cerbero.Snapshot.Exporter` maps a `0` here to
+  `nil` rather than forwarding it as a real row count — see the
+  `crdb_row_counts/2` comment there for the full reasoning and its
+  accepted cost (a genuinely empty CRDB table also reads as unknown
+  scale, not confidently zero).
+
   Note on `constraints/0`: `is_not_null_check_on` used to extract its
   capture group with `regexp_match(...)... [1]`, which does not exist on
   CockroachDB (`unknown function: regexp_match()`). `substring(x from

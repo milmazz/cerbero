@@ -79,27 +79,32 @@ defmodule Cerbero.Integration.CRDBTest do
 
   test "row scale: n_live_tup is wired from crdb_internal.table_row_statistics, never fabricated to 0",
        %{conn: conn} do
+    # DROP + CREATE fresh every run — not `CREATE TABLE IF NOT EXISTS` —
+    # so this test cannot be fooled by a previous run's already-warmed
+    # statistics into only ever exercising the "stats are ready" branch.
+    # This is the actual bug a prior version of this test missed: CRDB's
+    # `estimated_row_count` reads a literal `0` (not SQL NULL, confirmed
+    # empirically) for a table whose statistics haven't propagated yet,
+    # and that persisted for several seconds even after `CREATE
+    # STATISTICS` completed — a bounded retry loop doesn't reliably outrun
+    # it either. `Cerbero.Snapshot.Exporter.crdb_row_counts/2` now treats
+    # a `0` read the same as "no signal" (mapped to nil, not forwarded),
+    # so both outcomes below — stats hadn't propagated by export time, or
+    # they had — are correct; only a fabricated `{:rows, 0, _}` is not.
+    Postgrex.query!(conn, "DROP TABLE IF EXISTS rowcount_check", [])
+    Postgrex.query!(conn, "CREATE TABLE rowcount_check (id INT8 PRIMARY KEY, v STRING)", [])
+
     Postgrex.query!(
       conn,
-      "CREATE TABLE IF NOT EXISTS rowcount_check (id INT8 PRIMARY KEY, v STRING)",
+      "INSERT INTO rowcount_check (id, v) SELECT g, 'x' FROM generate_series(1, 3000) g",
       []
     )
 
     Postgrex.query!(
       conn,
-      "INSERT INTO rowcount_check (id, v) SELECT g, 'x' FROM generate_series(1, 3000) g " <>
-        "ON CONFLICT (id) DO NOTHING",
+      "CREATE STATISTICS cerbero_rowcount_check_stats FROM rowcount_check",
       []
     )
-
-    # CRDB's estimated_row_count is nil until stats exist for the table
-    # (auto stats collection is async and not guaranteed within a test's
-    # lifetime) — force it, with a short bounded retry: CREATE STATISTICS
-    # itself blocks until complete, but a fresh table's descriptor lease
-    # can lag by one query cycle before crdb_internal.table_row_statistics
-    # reflects it (observed empirically: occasionally 0 immediately after,
-    # always correct within a couple of retries).
-    await_row_stats(conn, "rowcount_check")
 
     assert {:ok, raw} = Exporter.export(@url)
     assert {:ok, snapshot} = Snapshot.decode(Snapshot.stamp(raw))
@@ -133,23 +138,6 @@ defmodule Cerbero.Integration.CRDBTest do
 
     assert {:error, %Postgrex.Error{}} =
              Postgrex.query(conn, "ALTER TABLE orgs_gen ALTER COLUMN x TYPE VARCHAR(20)", [])
-  end
-
-  defp await_row_stats(conn, table, tries \\ 5) do
-    Postgrex.query!(conn, "CREATE STATISTICS cerbero_#{table}_stats FROM #{table}", [])
-
-    result =
-      Postgrex.query!(
-        conn,
-        "SELECT estimated_row_count FROM crdb_internal.table_row_statistics WHERE table_name = $1",
-        [table]
-      )
-
-    case {result.rows, tries} do
-      {[[n]], _} when is_integer(n) and n > 0 -> :ok
-      {_, tries} when tries > 1 -> Process.sleep(200) && await_row_stats(conn, table, tries - 1)
-      _ -> :ok
-    end
   end
 
   # Postgrex.start_link/1 has no :url option — parse it the same way the
