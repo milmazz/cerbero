@@ -57,17 +57,22 @@ defmodule Cerbero.Check.ColumnTypeChangeTest do
     assert [] = judge_rule([t], "alter table(:events) do\n modify :id, :bigint\n end")
   end
 
-  test "CRDB: type change on an indexed column is rejected by the engine — error before deploy" do
+  test "CRDB: type change on an indexed column is restricted (not rejected) — warning before deploy" do
+    # Was asserted as `:error`/"CockroachDB rejects..." until the layer 4
+    # empirical differential (test/integration/crdb_test.exs) verified on
+    # a live v25.1 node that ALTER COLUMN TYPE succeeds on an indexed (PK)
+    # column when the cast is data-compatible (int -> bigint here) —
+    # see the comment on `Cerbero.DDL.CRDB.judge(:alter_column_type_indexed, _)`.
     crdb = %{"engine" => %{"name" => "cockroachdb", "version" => "25.1", "version_num" => 25_100}}
 
-    assert [%Finding{severity: :error, message: msg}] =
+    assert [%Finding{severity: :warning, message: msg}] =
              judge_rule(
                [events_with("integer")],
                "alter table(:events) do\n modify :id, :bigint\n end",
                snapshot: crdb
              )
 
-    assert msg =~ "CockroachDB rejects"
+    assert msg =~ "restricted"
   end
 
   test "born-this-deploy silencing: create table and modify column type in same migration" do
@@ -115,7 +120,9 @@ defmodule Cerbero.Check.ColumnTypeChangeTest do
              )
   end
 
-  test "CRDB: type change on a column with FK constraint is rejected" do
+  test "CRDB: type change on a column with FK constraint is restricted (not rejected)" do
+    # Same layer 4 correction as above — verified empirically that CRDB
+    # v25.1 also allows this cast on an FK-constrained column.
     crdb = %{"engine" => %{"name" => "cockroachdb", "version" => "25.1", "version_num" => 25_100}}
 
     t =
@@ -139,13 +146,13 @@ defmodule Cerbero.Check.ColumnTypeChangeTest do
         ]
       })
 
-    assert [%Finding{severity: :error, message: msg}] =
+    assert [%Finding{severity: :warning, message: msg}] =
              judge_rule(
                [t],
                "alter table(:events) do\n modify :org_id, :bigint\n end",
                snapshot: crdb
              )
 
-    assert msg =~ "CockroachDB rejects"
+    assert msg =~ "restricted"
   end
 end

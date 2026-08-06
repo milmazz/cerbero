@@ -28,7 +28,18 @@ defmodule Cerbero.DDL.Locks do
     attach_partition: {:share_update_exclusive, :full_scan},
     set_logged: {:access_exclusive, :rewrite},
     truncate: {:access_exclusive, :metadata_only},
-    reindex: {:access_exclusive, :full_scan},
+    # Layer 4 (empirical, PG 16): REINDEX TABLE takes ACCESS EXCLUSIVE on
+    # each index it rebuilds but only SHARE on the table itself — the same
+    # table-level lock strength as CREATE INDEX (blocks writers, not
+    # readers). This was previously {:access_exclusive, :full_scan}; that
+    # value had no live effect today (the SQL classifier doesn't attach a
+    # `target` relation to REINDEX yet, so unsafe_index_creation's
+    # relations-keyed filter always dropped it before severity was ever
+    # computed), but it was wrong on its own terms — it would have
+    # overstated severity (read+write blocking, TRUNCATE-grade) the moment
+    # that classifier gap closes, when the real behavior only blocks
+    # writers, same as CREATE INDEX.
+    reindex: {:share, :full_scan},
     reindex_concurrently: {:share_update_exclusive, :full_scan},
     drop_column: {:access_exclusive, :metadata_only},
     rename: {:access_exclusive, :metadata_only},

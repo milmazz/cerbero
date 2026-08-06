@@ -27,7 +27,10 @@ defmodule Cerbero.DDL.LocksTest do
     {:detach_partition, {:access_exclusive, :metadata_only}},
     {:set_logged, {:access_exclusive, :rewrite}},
     {:truncate, {:access_exclusive, :metadata_only}},
-    {:reindex, {:access_exclusive, :full_scan}},
+    # Table-level lock is SHARE (same as CREATE INDEX) — see the layer 4
+    # empirical note on `reindex` in Locks; ACCESS EXCLUSIVE is only what
+    # each individual index gets while it's being rebuilt.
+    {:reindex, {:share, :full_scan}},
     {:reindex_concurrently, {:share_update_exclusive, :full_scan}},
     {:drop_column, {:access_exclusive, :metadata_only}},
     {:rename, {:access_exclusive, :metadata_only}},

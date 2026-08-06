@@ -6,6 +6,26 @@ defmodule Cerbero.Snapshot.Exporter.Queries do
   column of the migrations table. This module is the privacy allowlist's
   first layer — review it like one.
 
+  Note on `tables/1` and `indexes/1`: both take an `engine` ("postgres" |
+  "cockroachdb") because `pg_relation_size`/`pg_total_relation_size` —
+  the only byte-size functions PG exposes — don't exist on CockroachDB
+  (confirmed empirically in the layer 4 CRDB differential: `unknown
+  function: pg_relation_size()`, SQLSTATE 42883). Rather than fail the
+  whole export over two columns, the CockroachDB branch reports
+  `heap_bytes`/`total_bytes`/`bytes` as `NULL` — an honest "unknown," not
+  a fabricated zero. CRDB does expose row-count estimates via
+  `crdb_internal.table_row_statistics` (see `crdb_row_counts/0`) but nothing
+  equivalent for on-disk bytes was found in this CRDB version (v25.1) at
+  the time of writing; revisit if a later version adds one.
+
+  Note on `constraints/0`: `is_not_null_check_on` used to extract its
+  capture group with `regexp_match(...)... [1]`, which does not exist on
+  CockroachDB (`unknown function: regexp_match()`). `substring(x from
+  pattern)` — SQL-standard POSIX substring, not engine-specific — returns
+  the same capture directly (no array indexing) and is supported
+  identically by both engines, so this one has no `engine` branch; it was
+  simply the more portable way to write the same query.
+
   Note on `columns/0`: it reports `default_kind` (a closed enum: `sequence`
   | `literal` | `expression`) but deliberately does NOT compute a
   `default_volatile` column itself. `Cerbero.Snapshot.Exporter` derives
@@ -35,7 +55,27 @@ defmodule Cerbero.Snapshot.Exporter.Queries do
   # sole non-catalog read; identifier is quote_ident-ed in code
   def applied_migrations(quoted_table), do: "SELECT version::text FROM #{quoted_table} ORDER BY 1"
 
-  def tables,
+  def tables(engine \\ "postgres")
+
+  def tables("cockroachdb"),
+    do: """
+    SELECT n.nspname AS schema, c.relname AS name,
+           c.relkind = 'p' AS partitioned,
+           parent.relnamespace::regnamespace::text || '.' || parent.relname AS partition_of,
+           c.reltuples::float8 AS reltuples, c.relpages::bigint AS relpages,
+           s.n_live_tup, s.last_analyze, s.last_autoanalyze,
+           s.seq_scan, s.idx_scan, s.n_tup_ins, s.n_tup_upd, s.n_tup_del,
+           NULL::bigint AS heap_bytes, NULL::bigint AS total_bytes
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    LEFT JOIN pg_stat_user_tables s ON s.relid = c.oid
+    LEFT JOIN pg_inherits i ON i.inhrelid = c.oid
+    LEFT JOIN pg_class parent ON parent.oid = i.inhparent
+    WHERE c.relkind IN ('r', 'p') AND n.nspname = ANY($1)
+    ORDER BY n.nspname, c.relname
+    """
+
+  def tables(_postgres),
     do: """
     SELECT n.nspname AS schema, c.relname AS name,
            c.relkind = 'p' AS partitioned,
@@ -80,7 +120,28 @@ defmodule Cerbero.Snapshot.Exporter.Queries do
     ORDER BY n.nspname, c.relname, a.attnum
     """
 
-  def indexes,
+  def indexes(engine \\ "postgres")
+
+  def indexes("cockroachdb"),
+    do: """
+    SELECT n.nspname AS schema, t.relname AS table, ic.relname AS name,
+           i.indisunique AS unique, i.indisprimary AS primary, i.indisvalid AS valid,
+           am.amname AS method, i.indpred IS NOT NULL AS partial,
+           NULL::bigint AS bytes,
+           (SELECT array_agg(CASE WHEN k.attnum = 0 THEN NULL ELSE a.attname END ORDER BY k.ord)
+            FROM unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
+            LEFT JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
+           ) AS key_names
+    FROM pg_index i
+    JOIN pg_class ic ON ic.oid = i.indexrelid
+    JOIN pg_class t ON t.oid = i.indrelid
+    JOIN pg_am am ON am.oid = ic.relam
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE n.nspname = ANY($1)
+    ORDER BY n.nspname, t.relname, ic.relname
+    """
+
+  def indexes(_postgres),
     do: """
     SELECT n.nspname AS schema, t.relname AS table, ic.relname AS name,
            i.indisunique AS unique, i.indisprimary AS primary, i.indisvalid AS valid,
@@ -120,7 +181,7 @@ defmodule Cerbero.Snapshot.Exporter.Queries do
                 WHEN 'c' THEN 'cascade' WHEN 'n' THEN 'set_null' WHEN 'd' THEN 'set_default' END AS on_update,
            CASE WHEN con.contype = 'c'
                      AND pg_get_constraintdef(con.oid) ~* '^CHECK \\(\\(?([a-z0-9_]+) IS NOT NULL\\)?\\)$'
-                THEN (regexp_match(pg_get_constraintdef(con.oid), '\\(([a-z0-9_]+) IS NOT NULL',  'i'))[1]
+                THEN substring(pg_get_constraintdef(con.oid) from '(?i)\\(([a-z0-9_]+) IS NOT NULL')
            END AS is_not_null_check_on
     FROM pg_constraint con
     JOIN pg_class t ON t.oid = con.conrelid

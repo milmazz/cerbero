@@ -4,7 +4,19 @@ defmodule Cerbero.Check.ColumnTypeChange do
 
   Silences type changes on tables born in this deploy (not backfilled) — safe by construction.
   For unmappable DSL types (custom types), emits no finding: deliberate false-positive guard.
-  CRDB: rejects type changes on indexed, constrained, or generated-stored columns.
+
+  CRDB: `crdb_judge/5` used to branch on whether the altered column was
+  indexed, constrained, or itself a generated/stored column, treating any
+  of those as engine-rejected. The layer 4 empirical differential
+  (`test/integration/crdb_test.exs`) found that false on a live CRDB
+  v25.1 node — none of those conditions cause a rejection anymore — so
+  that branch was dead code (Elixir's type checker flagged the
+  `{:rejected, _}` clause as unreachable once `Cerbero.DDL.CRDB.judge/2`'s
+  data was corrected) and has been removed along with the now-unused
+  `indexed?`/`constrained?`/`generated_stored?` detection. See the
+  comment on that `judge/2` clause for the full evidence and the one case
+  that *does* still reject (a separate generated column elsewhere in the
+  table depending on this one) — not currently distinguished here.
   """
   @behaviour Cerbero.Check
 
@@ -107,56 +119,27 @@ defmodule Cerbero.Check.ColumnTypeChange do
   end
 
   defp crdb_judge(qualified, col, line, migration, catalog) do
-    bare = qualified |> String.split(".") |> List.last()
+    # `CRDB.judge(:alter_column_type_indexed, _)` currently always
+    # returns `{:limited, _}` (see its comment for the layer 4 evidence)
+    # — matching that shape rather than discarding the call keeps this
+    # tied to the data table (data-not-conditionals) and turns a future
+    # data change that adds a real `{:rejected, _}` case back into a
+    # loud `MatchError` here, a tripwire for "this call site needs a
+    # branch again" rather than a silent no-op.
+    {:limited, _note} = CRDB.judge(:alter_column_type_indexed, catalog.version_num)
 
-    indexed? = indexes_on(catalog, bare, col) != []
-    constrained? = has_constraint_on?(catalog, bare, col)
-    generated_stored? = is_generated_stored?(catalog, bare, col)
-
-    rejected? = indexed? or constrained? or generated_stored?
-
-    case rejected? and CRDB.judge(:alter_column_type_indexed, catalog.version_num) do
-      {:rejected, note} ->
-        [
-          Helpers.finding(__MODULE__, :error, "#{qualified}.#{col}: #{note}", migration, line,
-            relations: [qualified],
-            engine: :cockroachdb
-          )
-        ]
-
-      _ ->
-        [
-          Helpers.finding(
-            __MODULE__,
-            :warning,
-            "#{qualified}.#{col}: ALTER COLUMN TYPE on CockroachDB is restricted " <>
-              "(cannot run inside a transaction with other statements)",
-            migration,
-            line,
-            relations: [qualified],
-            engine: :cockroachdb
-          )
-        ]
-    end
-  end
-
-  defp has_constraint_on?(catalog, table, col) do
-    case Catalog.table(catalog, table) do
-      nil ->
-        false
-
-      t ->
-        Enum.any?(t.constraints, fn c ->
-          Enum.member?(c.columns || [], col)
-        end)
-    end
-  end
-
-  defp is_generated_stored?(catalog, table, col) do
-    case Catalog.column(catalog, table, col) do
-      nil -> false
-      c -> c.generated == :stored
-    end
+    [
+      Helpers.finding(
+        __MODULE__,
+        :warning,
+        "#{qualified}.#{col}: ALTER COLUMN TYPE on CockroachDB is restricted " <>
+          "(cannot run inside a transaction with other statements)",
+        migration,
+        line,
+        relations: [qualified],
+        engine: :cockroachdb
+      )
+    ]
   end
 
   defp indexes_on(catalog, table, col) do

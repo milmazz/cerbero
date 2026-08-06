@@ -40,9 +40,9 @@ defmodule Cerbero.Snapshot.Exporter do
   defp build(conn, clock, schemas, migration_source) do
     engine = detect_engine(conn)
 
-    tables = rows(q!(conn, Queries.tables(), [schemas]))
+    tables = rows(q!(conn, Queries.tables(engine["name"]), [schemas]))
     columns = rows(q!(conn, Queries.columns(), [schemas]))
-    indexes = rows(q!(conn, Queries.indexes(), [schemas]))
+    indexes = rows(q!(conn, Queries.indexes(engine["name"]), [schemas]))
     constraints = rows(q!(conn, Queries.constraints(), [schemas]))
 
     applied =
@@ -53,7 +53,14 @@ defmodule Cerbero.Snapshot.Exporter do
 
     [[database]] = rows(q!(conn, Queries.current_database()))
     [[standby]] = rows(q!(conn, Queries.standby()))
-    stats_reset = conn |> q!(Queries.stats_reset()) |> rows() |> List.first() |> List.first()
+
+    # PG's pg_stat_database always has exactly one row per database. CRDB
+    # implements the view (queries against it don't error) but leaves it
+    # empty — confirmed empirically in the layer 4 CRDB differential — so
+    # the zero-row case needs an explicit default rather than assuming a
+    # first row exists.
+    stats_reset =
+      conn |> q!(Queries.stats_reset()) |> rows() |> List.first([nil]) |> List.first()
 
     {:ok,
      %{
@@ -131,7 +138,12 @@ defmodule Cerbero.Snapshot.Exporter do
         "name" => name,
         "partitioned" => partitioned,
         "partition_of" => partition_of,
-        "reltuples" => reltuples * 1.0,
+        # PG's pg_class.reltuples/relpages are NOT NULL (0 by default,
+        # never nil). CockroachDB's pg_class shim leaves both NULL —
+        # confirmed empirically in the layer 4 CRDB differential — so
+        # `reltuples * 1.0` must not assume a number is there; nil stays
+        # nil (an honest "unknown"), same as heap_bytes/total_bytes below.
+        "reltuples" => reltuples && reltuples * 1.0,
         "relpages" => relpages,
         "n_live_tup" => n_live_tup || 0,
         "last_analyze" => iso(last_analyze),
