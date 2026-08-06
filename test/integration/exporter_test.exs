@@ -47,12 +47,21 @@ defmodule Cerbero.Integration.ExporterTest do
     {:ok, raw} = Exporter.export(@url)
     {:ok, s} = Snapshot.decode(Snapshot.stamp(raw))
     by_name = Map.new(s.tables, &{&1.name, &1})
+    events_columns = Map.new(by_name["events"].columns, &{&1.name, &1})
 
     assert by_name["events"].partitioned
     assert by_name["events_p2026"].partition_of == "public.events"
-    assert Enum.any?(by_name["events"].columns, &(&1.generated == :stored))
-    assert Enum.any?(by_name["events"].columns, & &1.identity)
-    assert Enum.any?(by_name["events"].columns, &(&1.default && &1.default.volatile))
+
+    # GENERATED ALWAYS ... STORED columns have their own pg_attrdef row
+    # (holding the generation expression) — a plain `ad.oid IS NOT NULL`
+    # check would fabricate a `default` for them. `generated: :stored` and
+    # `default: nil` must hold together, distinct from a real (volatile)
+    # default like inserted_at's.
+    assert events_columns["total"].generated == :stored
+    assert events_columns["total"].default == nil
+    assert events_columns["seq"].identity
+    assert events_columns["inserted_at"].default.volatile
+
     assert Enum.any?(by_name["events_p2026"].indexes, & &1.partial)
 
     assert Enum.any?(by_name["events_p2026"].indexes, fn i ->

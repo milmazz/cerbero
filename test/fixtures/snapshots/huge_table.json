@@ -5,7 +5,7 @@
     "20250301000000"
   ],
   "cerbero_version": "0.1.0",
-  "checksum": "sha256:fc9b26fc5238d6624216bd7e857531f46b808d05ea451f45bce8465ad53b8ff8",
+  "checksum": "sha256:d72a0d6c20e26554316aaa6955804c13a17851dc8c7d2525c939f1c2bf7d6100",
   "collected_at": "2026-07-01T00:00:00Z",
   "database": "app_prod",
   "engine": {
@@ -24,7 +24,7 @@
           "default": {
             "kind": "sequence",
             "present": true,
-            "volatile": false
+            "volatile": true
           },
           "generated": null,
           "identity": false,
@@ -132,7 +132,7 @@
           "default": {
             "kind": "sequence",
             "present": true,
-            "volatile": false
+            "volatile": true
           },
           "generated": null,
           "identity": false,

@@ -5,6 +5,20 @@ defmodule Cerbero.Snapshot.Exporter.Queries do
   migrations-table identifier. The only non-catalog read is the versions
   column of the migrations table. This module is the privacy allowlist's
   first layer — review it like one.
+
+  Note on `columns/0`: it reports `default_kind` (a closed enum: `sequence`
+  | `literal` | `expression`) but deliberately does NOT compute a
+  `default_volatile` column itself. `Cerbero.Snapshot.Exporter` derives
+  `volatile` from `default_kind` downstream (`literal` -> false, anything
+  else -> true) — privacy is unaffected since `kind` is already an exported
+  enum. This replaced an earlier `pg_depend`/`pg_proc.provolatile` join that
+  under-reported: Postgres never records a `pg_depend` row from a default
+  onto a *pinned* (built-in) function, so `now()`, `clock_timestamp()`,
+  `random()`, and `nextval()` were all invisible to it. Deriving from `kind`
+  instead over-reports (a deterministic `expression` default like
+  `lower('x')` reads as volatile too) rather than under-report — the safe
+  direction, since a false "this rewrites the table" is a nuisance and a
+  false "this doesn't" is an outage.
   """
 
   def version, do: "SELECT version()"
@@ -46,22 +60,17 @@ defmodule Cerbero.Snapshot.Exporter.Queries do
            a.attnotnull AS not_null,
            a.attidentity <> '' AS identity,
            a.attgenerated = 's' AS generated_stored,
-           ad.oid IS NOT NULL AS has_default,
-           CASE WHEN ad.oid IS NULL THEN NULL
+           -- GENERATED ... STORED columns have a pg_attrdef row too (it
+           -- holds the generation expression), so ad.oid IS NOT NULL alone
+           -- would fabricate a `default` for every generated column. Gate
+           -- both has_default and default_kind on attgenerated = '' so
+           -- generated columns report generated_stored + default: nil, not
+           -- a phantom "default".
+           ad.oid IS NOT NULL AND a.attgenerated = '' AS has_default,
+           CASE WHEN ad.oid IS NULL OR a.attgenerated <> '' THEN NULL
                 WHEN pg_get_expr(ad.adbin, ad.adrelid) LIKE 'nextval(%' THEN 'sequence'
                 WHEN pg_get_expr(ad.adbin, ad.adrelid) ~ '^[^(]*$' THEN 'literal'
-                ELSE 'expression' END AS default_kind,
-           -- "volatile" here means "not a literal/sequence, so not provably
-           -- safe" — the same call a DSL-only default: {:fragment, _} makes
-           -- offline. It is NOT pg_proc.provolatile: Postgres never records
-           -- a pg_depend row from a default onto a pinned (built-in)
-           -- function, so now()/clock_timestamp()/random() are invisible to
-           -- that join and it under-reports almost everything real
-           -- migrations use. Same syntactic test as default_kind instead.
-           CASE WHEN ad.oid IS NULL THEN false
-                WHEN pg_get_expr(ad.adbin, ad.adrelid) LIKE 'nextval(%' THEN false
-                WHEN pg_get_expr(ad.adbin, ad.adrelid) ~ '^[^(]*$' THEN false
-                ELSE true END AS default_volatile
+                ELSE 'expression' END AS default_kind
     FROM pg_attribute a
     JOIN pg_class c ON c.oid = a.attrelid
     JOIN pg_namespace n ON n.oid = c.relnamespace

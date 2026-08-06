@@ -159,8 +159,7 @@ defmodule Cerbero.Snapshot.Exporter do
          identity,
          generated_stored,
          has_default,
-         default_kind,
-         default_volatile
+         default_kind
        ]) do
     %{
       "name" => name,
@@ -170,10 +169,22 @@ defmodule Cerbero.Snapshot.Exporter do
       "generated" => if(generated_stored, do: "stored"),
       "default" =>
         if has_default do
-          %{"present" => true, "volatile" => default_volatile, "kind" => default_kind}
+          %{
+            "present" => true,
+            "volatile" => default_volatile?(default_kind),
+            "kind" => default_kind
+          }
         end
     }
   end
+
+  # See Queries moduledoc: volatile is derived from kind, not read from the
+  # catalog directly. "literal" is provably a constant; "sequence" and
+  # "expression" both cannot be, so both count as volatile — biased toward
+  # over-reporting (a deterministic expression default reads as volatile
+  # too) rather than under-reporting (missing a real rewrite risk).
+  defp default_volatile?("literal"), do: false
+  defp default_volatile?(_kind), do: true
 
   defp index_json([_s, _t, name, unique, primary, valid, method, partial, bytes, key_names]) do
     %{
@@ -365,8 +376,7 @@ defmodule Cerbero.Snapshot.Exporter do
       m["identity"],
       m["generated_stored"],
       m["has_default"],
-      m["default_kind"],
-      m["default_volatile"]
+      m["default_kind"]
     ]
   end
 
