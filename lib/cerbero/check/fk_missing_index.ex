@@ -1,0 +1,53 @@
+defmodule Cerbero.Check.FKMissingIndex do
+  @moduledoc "Rule 6: a new FK whose referencing column has no covering index in catalog ∪ overlay."
+  @behaviour Cerbero.Check
+
+  alias Cerbero.Catalog
+  alias Cerbero.Check.Helpers
+  alias Cerbero.Operation, as: Op
+
+  @impl true
+  def id, do: :fk_missing_index
+
+  @impl true
+  def run(migration, catalog, config) do
+    same_migration_indexed =
+      for %Op.CreateIndex{table: t, keys: [first | _]} <- migration.operations,
+          into: MapSet.new(),
+          do: {Catalog.qualify(t), to_string(first)}
+
+    for %Op.AlterTable{table: table, ops: ops, line: line} <- migration.operations,
+        {op_kind, col, {:references, ref, _opts}, _col_opts} <- normalize(ops),
+        op_kind in [:add_column, :modify_column],
+        not covered?(catalog, table, col, same_migration_indexed),
+        finding <- [emit(table, col, ref, line, migration, config)] do
+      finding
+    end
+  end
+
+  defp normalize(ops) do
+    Enum.map(ops, fn
+      {kind, col, type, opts} -> {kind, col, type, opts}
+      {kind, col} -> {kind, col, nil, []}
+    end)
+  end
+
+  defp covered?(catalog, table, col, same_migration_indexed) do
+    Catalog.has_index_leading_on?(catalog, table, col) or
+      MapSet.member?(same_migration_indexed, {Catalog.qualify(table), col})
+  end
+
+  defp emit(table, col, ref, line, migration, _config) do
+    q = Catalog.qualify(table)
+
+    Helpers.finding(
+      __MODULE__,
+      :warning,
+      "new foreign key #{q}.#{col} -> #{Catalog.qualify(ref)} has no covering index on #{col}; " <>
+        "deletes/updates on the referenced table will sequential-scan #{q}",
+      migration,
+      line,
+      relations: [q, Catalog.qualify(ref)]
+    )
+  end
+end

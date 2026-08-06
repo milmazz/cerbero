@@ -95,9 +95,9 @@ defmodule Cerbero.DDL.Effects do
 
   defp classify(_other), do: [{:unknown_operation, []}]
 
-  defp alter_class({:add_column, _name, {:references, ref, _}, opts}, t) do
+  defp alter_class({:add_column, _name, {:references, ref, fk_opts}, opts}, t) do
     fk = [
-      {if(Keyword.get(opts, :validate, true),
+      {if(Keyword.get(fk_opts, :validate, true),
          do: :add_foreign_key,
          else: :add_foreign_key_not_valid
        ), [target: t, referenced: ref]}

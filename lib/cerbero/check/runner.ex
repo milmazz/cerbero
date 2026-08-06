@@ -10,6 +10,9 @@ defmodule Cerbero.Check.Runner do
       Cerbero.Check.ConcurrentIndexRequiresAttributes,
       Cerbero.Check.NotNullOnPopulatedTable,
       Cerbero.Check.ColumnDefaultRewrite,
+      Cerbero.Check.ColumnTypeChange,
+      Cerbero.Check.FKValidationScan,
+      Cerbero.Check.FKMissingIndex,
       Cerbero.Check.MetaFindings
     ]
   end
