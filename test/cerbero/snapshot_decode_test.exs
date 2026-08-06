@@ -2,6 +2,7 @@ defmodule Cerbero.SnapshotDecodeTest do
   use ExUnit.Case, async: true
 
   alias Cerbero.Snapshot
+  import Cerbero.Test.SnapshotBuilder
 
   @fixture "test/fixtures/snapshots/huge_table.json"
 
@@ -44,5 +45,52 @@ defmodule Cerbero.SnapshotDecodeTest do
     path = Path.join(System.tmp_dir!(), "bad_enum.json")
     Cerbero.Snapshot.write!(bad, path)
     assert {:error, {:invalid_value, _path, "mysql"}} = Snapshot.load(path)
+  end
+
+  describe "crash-safety regression tests" do
+    test "returns error, not crash, when required 'tables' field is missing" do
+      raw = build() |> Map.delete("tables")
+      assert {:error, {:invalid_value, _, :not_a_list}} = Snapshot.decode(raw)
+    end
+
+    test "returns error, not crash, when 'columns' is nil" do
+      raw =
+        build(%{
+          "tables" => [table("events", %{"columns" => nil})]
+        })
+
+      assert {:error, {:invalid_value, _, :not_a_list}} = Snapshot.decode(raw)
+    end
+
+    test "returns error, not crash, when generated column has invalid value" do
+      raw =
+        build(%{
+          "tables" => [
+            table("events", %{
+              "columns" => [column("id", %{"generated" => "virtual"})]
+            })
+          ]
+        })
+
+      assert {:error, {:invalid_value, _, "virtual"}} = Snapshot.decode(raw)
+    end
+
+    test "returns error, not crash, when indexes is nil" do
+      raw =
+        build(%{
+          "tables" => [table("events", %{"indexes" => nil})]
+        })
+
+      assert {:error, {:invalid_value, _, :not_a_list}} = Snapshot.decode(raw)
+    end
+
+    test "returns error, not crash, when constraints is nil" do
+      raw =
+        build(%{
+          "tables" => [table("events", %{"constraints" => nil})]
+        })
+
+      assert {:error, {:invalid_value, _, :not_a_list}} = Snapshot.decode(raw)
+    end
   end
 end

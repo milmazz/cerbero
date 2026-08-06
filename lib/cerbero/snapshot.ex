@@ -163,9 +163,18 @@ defmodule Cerbero.Snapshot do
   defp decode_tables(tables) when is_list(tables) do
     map_while_ok(tables, fn t ->
       with :ok <- strict(t, @table_fields, "$.tables[#{t["name"]}]"),
-           {:ok, columns} <- map_while_ok(t["columns"], &decode_column/1),
-           {:ok, indexes} <- map_while_ok(t["indexes"], &decode_index/1),
-           {:ok, constraints} <- map_while_ok(t["constraints"], &decode_constraint/1),
+           {:ok, columns} <-
+             validate_list(t["columns"], "$.tables[#{t["name"]}].columns", fn l ->
+               map_while_ok(l, &decode_column/1)
+             end),
+           {:ok, indexes} <-
+             validate_list(t["indexes"], "$.tables[#{t["name"]}].indexes", fn l ->
+               map_while_ok(l, &decode_index/1)
+             end),
+           {:ok, constraints} <-
+             validate_list(t["constraints"], "$.tables[#{t["name"]}].constraints", fn l ->
+               map_while_ok(l, &decode_constraint/1)
+             end),
            {:ok, la} <- optional_datetime(t["last_analyze"], "last_analyze"),
            {:ok, laa} <- optional_datetime(t["last_autoanalyze"], "last_autoanalyze") do
         {:ok,
@@ -194,23 +203,27 @@ defmodule Cerbero.Snapshot do
     end)
   end
 
+  defp decode_tables(_), do: {:error, {:invalid_value, "$.tables", :not_a_list}}
+
   defp decode_column(c) do
     with :ok <- strict(c, @column_fields, "column #{c["name"]}"),
-         {:ok, default} <- decode_default(c["default"]) do
+         {:ok, default} <- decode_default(c["default"]),
+         {:ok, generated} <- decode_generated(c["generated"]) do
       {:ok,
        %{
          name: c["name"],
          type: c["type"],
          not_null: c["not_null"],
          identity: c["identity"],
-         generated: decode_generated(c["generated"]),
+         generated: generated,
          default: default
        }}
     end
   end
 
-  defp decode_generated(nil), do: nil
-  defp decode_generated("stored"), do: :stored
+  defp decode_generated(nil), do: {:ok, nil}
+  defp decode_generated("stored"), do: {:ok, :stored}
+  defp decode_generated(value), do: {:error, {:invalid_value, "column.generated", value}}
 
   defp decode_default(nil), do: {:ok, nil}
 
@@ -297,6 +310,14 @@ defmodule Cerbero.Snapshot do
 
   defp optional_datetime(nil, _path), do: {:ok, nil}
   defp optional_datetime(value, path), do: datetime(value, path)
+
+  defp validate_list(list, _path, fun) when is_list(list) do
+    fun.(list)
+  end
+
+  defp validate_list(_other, path, _fun) do
+    {:error, {:invalid_value, path, :not_a_list}}
+  end
 
   defp map_while_ok(list, fun) when is_list(list) do
     Enum.reduce_while(list, {:ok, []}, fn item, {:ok, acc} ->
