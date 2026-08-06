@@ -88,4 +88,59 @@ defmodule Cerbero.SQL.ClassifierTest do
     assert %Classified{class: :unknown} = one("CLUSTER events USING idx")
     assert %Classified{class: :unknown} = one("DO $$ BEGIN NULL; END $$")
   end
+
+  test "create index, unnamed (valid, common PG syntax)" do
+    assert %Classified{class: :create_index, table: "events", concurrently: false, unique: false} =
+             one("CREATE INDEX ON events (col)")
+
+    assert %Classified{class: :create_index, table: "events", concurrently: false, unique: true} =
+             one("CREATE UNIQUE INDEX ON events (col)")
+
+    assert %Classified{class: :create_index, table: "events", concurrently: true, unique: false} =
+             one("CREATE INDEX CONCURRENTLY ON events (col)")
+  end
+
+  test "comment/quote boundaries don't bleed into each other (regression)" do
+    # A `--` sitting inside a string literal must not be treated as a
+    # comment start — and must not eat the statement(s) that follow it.
+    assert [
+             %Classified{class: :update, table: "events"},
+             %Classified{class: :delete, table: "events"}
+           ] =
+             Classifier.classify(
+               "UPDATE events SET note = '--x' WHERE id = 1; DELETE FROM events WHERE id = 2;"
+             )
+
+    # Same for `/*` inside a string literal — must not be treated as a
+    # block comment start.
+    assert [
+             %Classified{class: :update, table: "events"},
+             %Classified{class: :delete, table: "events"}
+           ] =
+             Classifier.classify(
+               "UPDATE events SET note = '/* not a comment' WHERE id = 1; DELETE FROM events WHERE id = 2;"
+             )
+
+    # A quote character inside a `--` comment must not open a string (and
+    # so must not swallow the rest of the input hunting for a close quote).
+    assert %Classified{class: :truncate, table: "events"} =
+             one("TRUNCATE events -- \"unterminated quote\ncomment")
+
+    # Nested block comments (valid PG) collapse cleanly, without corrupting
+    # the statement around them.
+    assert %Classified{class: :truncate, table: "events"} =
+             one("TRUNCATE /* outer /* inner */ still outer */ events")
+  end
+
+  test "invalid/truncated UTF-8 never crashes classify/1" do
+    assert [%Classified{class: :unknown}] = Classifier.classify(<<0, 1, 2, 3, 255>>)
+
+    assert [%Classified{class: :unknown}] =
+             Classifier.classify("UPDATE events SET note = 'caf" <> <<0xC3>>)
+  end
+
+  test "quoted identifiers preserve case" do
+    assert %Classified{class: :create_table, table: "Flags"} =
+             one("CREATE TABLE \"Flags\" (id int)")
+  end
 end
