@@ -101,4 +101,39 @@ defmodule Cerbero.Check.SnapshotHealthTest do
 
     refute Enum.any?(findings, &(&1.message =~ "events_v2"))
   end
+
+  test "two pending migrations targeting same absent table produce two errors (one per file)" do
+    findings =
+      run_health(
+        pending: [
+          pending!("20260901000000", "create index(:ghost, [:x])"),
+          pending!("20260901000001", "create index(:ghost, [:y])")
+        ]
+      )
+
+    ghost_errors = Enum.filter(findings, &(&1.severity == :error and &1.message =~ "ghost"))
+    assert length(ghost_errors) == 2
+    assert Enum.map(ghost_errors, & &1.file) == ["20260901000000_p.exs", "20260901000001_p.exs"]
+  end
+
+  test "FK-referenced absent table fires error even if base table is known" do
+    t = table("orders", %{})
+
+    findings =
+      run_health(
+        snapshot: %{"tables" => [t]},
+        pending: [
+          pending!(
+            "20260901000000",
+            "alter table(:orders) do\n add :owner_id, references(:absent_owners)\n end"
+          )
+        ]
+      )
+
+    assert Enum.any?(
+             findings,
+             &(&1.severity == :error and &1.message =~ "absent_owners" and
+                 &1.message =~ "re-export")
+           )
+  end
 end

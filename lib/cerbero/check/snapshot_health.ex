@@ -164,6 +164,6 @@ defmodule Cerbero.Check.SnapshotHealth do
         {findings, Catalog.apply_migration(cat, m)}
       end)
 
-    Enum.uniq_by(findings, & &1.message)
+    Enum.uniq_by(findings, &{&1.file, &1.line, &1.message})
   end
 end
