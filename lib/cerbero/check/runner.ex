@@ -13,6 +13,8 @@ defmodule Cerbero.Check.Runner do
       Cerbero.Check.ColumnTypeChange,
       Cerbero.Check.FKValidationScan,
       Cerbero.Check.FKMissingIndex,
+      Cerbero.Check.CRDBTransactionalDDL,
+      Cerbero.Check.DMLInMigration,
       Cerbero.Check.MetaFindings
     ]
   end
