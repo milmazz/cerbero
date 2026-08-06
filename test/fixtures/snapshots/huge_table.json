@@ -5,7 +5,7 @@
     "20250301000000"
   ],
   "cerbero_version": "0.1.0",
-  "checksum": "sha256:4a8d2ef27272c80a353fdbed5ebe8f489d48e396135766cc8c67ddb05fb759a6",
+  "checksum": "sha256:fc9b26fc5238d6624216bd7e857531f46b808d05ea451f45bce8465ad53b8ff8",
   "collected_at": "2026-07-01T00:00:00Z",
   "database": "app_prod",
   "engine": {
@@ -112,7 +112,7 @@
         }
       ],
       "last_analyze": null,
-      "last_autoanalyze": "2026-06-30T23:30:00Z",
+      "last_autoanalyze": "2026-07-01T00:00:00Z",
       "n_live_tup": 412000000,
       "n_tup_del": 20000,
       "n_tup_ins": 96000000,
