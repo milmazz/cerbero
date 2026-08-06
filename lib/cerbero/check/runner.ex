@@ -6,8 +6,9 @@ defmodule Cerbero.Check.Runner do
   @spec default_checks() :: [module()]
   def default_checks do
     [
+      Cerbero.Check.UnsafeIndexCreation,
+      Cerbero.Check.ConcurrentIndexRequiresAttributes,
       Cerbero.Check.MetaFindings
-      # Rules append themselves here as their tasks land (Tasks 11-15).
     ]
   end
 
