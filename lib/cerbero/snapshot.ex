@@ -8,6 +8,44 @@ defmodule Cerbero.Snapshot do
 
   alias Cerbero.Snapshot.Canonical
 
+  defstruct [
+    :format_version,
+    :cerbero_version,
+    :collected_at,
+    :database,
+    :engine,
+    :standby,
+    :stats_provenance,
+    :stats_reset,
+    :applied_migrations,
+    :tables,
+    :raw
+  ]
+
+  defmodule Table do
+    defstruct [
+      :schema,
+      :name,
+      :partitioned,
+      :partition_of,
+      :reltuples,
+      :relpages,
+      :n_live_tup,
+      :last_analyze,
+      :last_autoanalyze,
+      :seq_scan,
+      :idx_scan,
+      :n_tup_ins,
+      :n_tup_upd,
+      :n_tup_del,
+      :heap_bytes,
+      :total_bytes,
+      :columns,
+      :indexes,
+      :constraints
+    ]
+  end
+
   @format_version 1
   @min_supported 1
 
@@ -25,13 +63,13 @@ defmodule Cerbero.Snapshot do
   @spec write!(map(), Path.t()) :: :ok
   def write!(map, path), do: File.write!(path, Canonical.encode(stamp(map)))
 
-  @spec load(Path.t()) :: {:ok, map()} | {:error, term()}
+  @spec load(Path.t()) :: {:ok, %__MODULE__{}} | {:error, term()}
   def load(path) do
     with {:ok, bytes} <- read(path),
          {:ok, raw} <- decode_json(bytes),
          :ok <- verify_checksum(raw),
          :ok <- gate_version(raw) do
-      {:ok, raw}
+      decode(raw)
     end
   end
 
@@ -67,4 +105,209 @@ defmodule Cerbero.Snapshot do
   end
 
   defp gate_version(_), do: {:error, :missing_format_version}
+
+  # Typed strict decode
+
+  @top_fields ~w(applied_migrations cerbero_version checksum collected_at database engine format_version standby stats_provenance stats_reset tables)
+  @engine_fields ~w(name version version_num)
+  @table_fields ~w(columns constraints heap_bytes idx_scan indexes last_analyze last_autoanalyze n_live_tup n_tup_del n_tup_ins n_tup_upd name partition_of partitioned relpages reltuples schema seq_scan total_bytes)
+  @column_fields ~w(default generated identity name not_null type)
+  @default_fields ~w(kind present volatile)
+  @index_fields ~w(bytes keys method name partial primary unique valid)
+  @key_fields ~w(kind name)
+  @constraint_fields ~w(columns is_not_null_check_on name on_delete on_update references type validated)
+  @references_fields ~w(columns table)
+
+  @engines %{"postgres" => :postgres, "cockroachdb" => :cockroachdb}
+  @provenance %{"primary" => :primary, "standby" => :standby}
+  @constraint_types %{
+    "primary" => :primary,
+    "unique" => :unique,
+    "foreign_key" => :foreign_key,
+    "check" => :check,
+    "exclusion" => :exclusion
+  }
+  @default_kinds %{"sequence" => :sequence, "expression" => :expression, "literal" => :literal}
+  @key_kinds %{"column" => :column, "expression" => :expression}
+
+  @spec decode(map()) :: {:ok, %__MODULE__{}} | {:error, term()}
+  def decode(raw) do
+    with :ok <- strict(raw, @top_fields, "$"),
+         :ok <- strict(raw["engine"], @engine_fields, "$.engine"),
+         {:ok, engine_name} <- enum(raw["engine"]["name"], @engines, "$.engine.name"),
+         {:ok, provenance} <- enum(raw["stats_provenance"], @provenance, "$.stats_provenance"),
+         {:ok, collected_at} <- datetime(raw["collected_at"], "$.collected_at"),
+         {:ok, stats_reset} <- optional_datetime(raw["stats_reset"], "$.stats_reset"),
+         {:ok, tables} <- decode_tables(raw["tables"]) do
+      {:ok,
+       %__MODULE__{
+         format_version: raw["format_version"],
+         cerbero_version: raw["cerbero_version"],
+         collected_at: collected_at,
+         database: raw["database"],
+         engine: %{
+           name: engine_name,
+           version: raw["engine"]["version"],
+           version_num: raw["engine"]["version_num"]
+         },
+         standby: raw["standby"],
+         stats_provenance: provenance,
+         stats_reset: stats_reset,
+         applied_migrations: raw["applied_migrations"],
+         tables: tables,
+         raw: raw
+       }}
+    end
+  end
+
+  defp decode_tables(tables) when is_list(tables) do
+    map_while_ok(tables, fn t ->
+      with :ok <- strict(t, @table_fields, "$.tables[#{t["name"]}]"),
+           {:ok, columns} <- map_while_ok(t["columns"], &decode_column/1),
+           {:ok, indexes} <- map_while_ok(t["indexes"], &decode_index/1),
+           {:ok, constraints} <- map_while_ok(t["constraints"], &decode_constraint/1),
+           {:ok, la} <- optional_datetime(t["last_analyze"], "last_analyze"),
+           {:ok, laa} <- optional_datetime(t["last_autoanalyze"], "last_autoanalyze") do
+        {:ok,
+         %Table{
+           schema: t["schema"],
+           name: t["name"],
+           partitioned: t["partitioned"],
+           partition_of: t["partition_of"],
+           reltuples: t["reltuples"],
+           relpages: t["relpages"],
+           n_live_tup: t["n_live_tup"],
+           last_analyze: la,
+           last_autoanalyze: laa,
+           seq_scan: t["seq_scan"],
+           idx_scan: t["idx_scan"],
+           n_tup_ins: t["n_tup_ins"],
+           n_tup_upd: t["n_tup_upd"],
+           n_tup_del: t["n_tup_del"],
+           heap_bytes: t["heap_bytes"],
+           total_bytes: t["total_bytes"],
+           columns: columns,
+           indexes: indexes,
+           constraints: constraints
+         }}
+      end
+    end)
+  end
+
+  defp decode_column(c) do
+    with :ok <- strict(c, @column_fields, "column #{c["name"]}"),
+         {:ok, default} <- decode_default(c["default"]) do
+      {:ok,
+       %{
+         name: c["name"],
+         type: c["type"],
+         not_null: c["not_null"],
+         identity: c["identity"],
+         generated: decode_generated(c["generated"]),
+         default: default
+       }}
+    end
+  end
+
+  defp decode_generated(nil), do: nil
+  defp decode_generated("stored"), do: :stored
+
+  defp decode_default(nil), do: {:ok, nil}
+
+  defp decode_default(d) do
+    with :ok <- strict(d, @default_fields, "default"),
+         {:ok, kind} <- enum(d["kind"], @default_kinds, "default.kind") do
+      {:ok, %{present: d["present"], volatile: d["volatile"], kind: kind}}
+    end
+  end
+
+  defp decode_index(i) do
+    with :ok <- strict(i, @index_fields, "index #{i["name"]}"),
+         {:ok, keys} <- map_while_ok(i["keys"], &decode_key/1) do
+      {:ok,
+       %{
+         name: i["name"],
+         unique: i["unique"],
+         primary: i["primary"],
+         valid: i["valid"],
+         method: i["method"],
+         partial: i["partial"],
+         bytes: i["bytes"],
+         keys: keys
+       }}
+    end
+  end
+
+  defp decode_key(k) do
+    with :ok <- strict(k, @key_fields, "index key"),
+         {:ok, kind} <- enum(k["kind"], @key_kinds, "key.kind") do
+      {:ok,
+       if(kind == :column, do: %{kind: :column, name: k["name"]}, else: %{kind: :expression})}
+    end
+  end
+
+  defp decode_constraint(c) do
+    with :ok <- strict(c, @constraint_fields, "constraint #{c["name"]}"),
+         {:ok, type} <- enum(c["type"], @constraint_types, "constraint.type"),
+         {:ok, refs} <- decode_references(c["references"]) do
+      {:ok,
+       %{
+         name: c["name"],
+         type: type,
+         columns: c["columns"],
+         validated: c["validated"],
+         references: refs,
+         on_delete: c["on_delete"],
+         on_update: c["on_update"],
+         is_not_null_check_on: c["is_not_null_check_on"]
+       }}
+    end
+  end
+
+  defp decode_references(nil), do: {:ok, nil}
+
+  defp decode_references(r) do
+    with :ok <- strict(r, @references_fields, "references") do
+      {:ok, %{table: r["table"], columns: r["columns"]}}
+    end
+  end
+
+  defp strict(map, allowed, path) when is_map(map) do
+    case Map.keys(map) -- allowed do
+      [] -> :ok
+      extra -> {:error, {:unknown_fields, path, Enum.sort(extra)}}
+    end
+  end
+
+  defp strict(_other, _allowed, path), do: {:error, {:invalid_value, path, :not_an_object}}
+
+  defp enum(value, mapping, path) do
+    case Map.fetch(mapping, value) do
+      {:ok, atom} -> {:ok, atom}
+      :error -> {:error, {:invalid_value, path, value}}
+    end
+  end
+
+  defp datetime(value, path) do
+    case is_binary(value) && DateTime.from_iso8601(value) do
+      {:ok, dt, 0} -> {:ok, dt}
+      _ -> {:error, {:invalid_value, path, value}}
+    end
+  end
+
+  defp optional_datetime(nil, _path), do: {:ok, nil}
+  defp optional_datetime(value, path), do: datetime(value, path)
+
+  defp map_while_ok(list, fun) when is_list(list) do
+    Enum.reduce_while(list, {:ok, []}, fn item, {:ok, acc} ->
+      case fun.(item) do
+        {:ok, decoded} -> {:cont, {:ok, [decoded | acc]}}
+        {:error, _} = e -> {:halt, e}
+      end
+    end)
+    |> case do
+      {:ok, acc} -> {:ok, Enum.reverse(acc)}
+      other -> other
+    end
+  end
 end

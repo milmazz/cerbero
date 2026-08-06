@@ -7,13 +7,13 @@ defmodule Cerbero.SnapshotTest do
   @fixture "test/fixtures/snapshots/huge_table.json"
 
   test "decodes and checksum-verifies the v1 huge_table fixture" do
-    assert {:ok, snapshot} = Snapshot.load(@fixture)
-    assert snapshot["database"] == "app_prod"
-    assert snapshot["format_version"] == 1
-    assert snapshot["engine"]["name"] == "postgres"
+    assert {:ok, %Snapshot{} = snapshot} = Snapshot.load(@fixture)
+    assert snapshot.database == "app_prod"
+    assert snapshot.format_version == 1
+    assert snapshot.engine.name == :postgres
 
-    assert [%{"name" => "events"}, %{"name" => "orgs"}] =
-             Enum.sort_by(snapshot["tables"], & &1["name"])
+    assert [%Snapshot.Table{name: "events"}, %Snapshot.Table{name: "orgs"}] =
+             Enum.sort_by(snapshot.tables, & &1.name)
   end
 
   test "fixture bytes are already canonical (re-encode is byte-identical)" do
