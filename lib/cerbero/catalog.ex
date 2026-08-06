@@ -84,12 +84,20 @@ defmodule Cerbero.Catalog do
   end
 
   defp partition_sum(cat, parent) do
-    cat.tables
-    |> Map.values()
-    |> Enum.filter(&(&1.partition_of == parent))
-    |> Enum.reduce({:rows, 0, 0}, fn t, {:rows, rows, bytes} ->
-      {:rows, rows + row_estimate(t), bytes + (t.heap_bytes || 0)}
-    end)
+    partitions =
+      cat.tables
+      |> Map.values()
+      |> Enum.filter(&(&1.partition_of == parent))
+
+    case partitions do
+      [] ->
+        :unknown
+
+      _ ->
+        Enum.reduce(partitions, {:rows, 0, 0}, fn t, {:rows, rows, bytes} ->
+          {:rows, rows + row_estimate(t), bytes + (t.heap_bytes || 0)}
+        end)
+    end
   end
 
   defp row_estimate(%Table{reltuples: rt, n_live_tup: nlt}) do

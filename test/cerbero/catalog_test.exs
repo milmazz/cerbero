@@ -111,4 +111,35 @@ defmodule Cerbero.CatalogTest do
     assert Catalog.validated_not_null_check?(cat, "events", "org_id")
     assert %{name: "org_id"} = Catalog.column(cat, "events", "org_id")
   end
+
+  test "partitioned parent with no partition entries: unknown scale, not zero" do
+    # Regression: empty partition list should return :unknown, not {:rows, 0, 0}
+    cat =
+      catalog([
+        table("events", %{
+          "partitioned" => true,
+          "reltuples" => 0.0,
+          "n_live_tup" => 0,
+          "heap_bytes" => 0
+        })
+      ])
+
+    assert Catalog.scale(cat, "events") == :unknown
+  end
+
+  test "empty catalog: replay source with unbounded scale" do
+    cat = Catalog.empty()
+    assert cat.source == :replay
+    assert cat.scale_mode == :unbounded
+    assert Catalog.scale(cat, "anything") == :unknown
+    refute Catalog.known?(cat, "anything")
+  end
+
+  test "empty catalog with custom engine and version" do
+    cat = Catalog.empty(:cockroachdb, 210_000)
+    assert cat.engine == :cockroachdb
+    assert cat.version_num == 210_000
+    assert cat.source == :replay
+    assert cat.scale_mode == :unbounded
+  end
 end
