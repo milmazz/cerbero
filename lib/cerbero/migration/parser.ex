@@ -74,14 +74,28 @@ defmodule Cerbero.Migration.Parser do
   defp find_module({:defmodule, _, [alias_ast, [do: body]]}),
     do: {Macro.to_string(alias_ast), body}
 
+  # A file may define helper modules ahead of the actual migration module
+  # (e.g. a shared fixture/support module). Prefer whichever top-level
+  # module's body has `use Ecto.Migration`; only fall back to the first
+  # module when none do, so a helper defined first never silently swallows
+  # the real migration's operations.
   defp find_module({:__block__, _, nodes}) do
-    Enum.find_value(nodes, {nil, nil}, fn
-      {:defmodule, _, _} = mod -> find_module(mod)
-      _ -> nil
-    end)
+    modules =
+      nodes
+      |> Enum.filter(&match?({:defmodule, _, _}, &1))
+      |> Enum.map(&find_module/1)
+
+    Enum.find(modules, fn {_module, body} -> uses_ecto_migration?(body) end) ||
+      List.first(modules) || {nil, nil}
   end
 
   defp find_module(_), do: {nil, nil}
+
+  defp uses_ecto_migration?(body) do
+    body
+    |> block_nodes()
+    |> Enum.any?(&match?({:use, _, [{:__aliases__, _, [:Ecto, :Migration]} | _]}, &1))
+  end
 
   defp attributes(body) do
     body
@@ -146,11 +160,13 @@ defmodule Cerbero.Migration.Parser do
 
   # --- create/drop/alter/execute -------------------------------------------
 
-  defp op({:create, meta, [{:table, _, [name | _]}, [do: table_body]]}) do
+  defp op({verb, meta, [{:table, _, [name | _]}, [do: table_body]]})
+       when verb in [:create, :create_if_not_exists] do
     %Op.CreateTable{table: name(name), line: meta[:line], columns: columns(table_body)}
   end
 
-  defp op({:create, meta, [{:table, _, [name | _]}]}) do
+  defp op({verb, meta, [{:table, _, [name | _]}]})
+       when verb in [:create, :create_if_not_exists] do
     %Op.CreateTable{table: name(name), line: meta[:line], columns: []}
   end
 
@@ -173,7 +189,8 @@ defmodule Cerbero.Migration.Parser do
     end
   end
 
-  defp op({:create, meta, [{:constraint, _, [table, cname | rest]}]}) do
+  defp op({verb, meta, [{:constraint, _, [table, cname | rest]}]})
+       when verb in [:create, :create_if_not_exists] do
     opts = List.first(rest) || []
 
     %Op.CreateConstraint{

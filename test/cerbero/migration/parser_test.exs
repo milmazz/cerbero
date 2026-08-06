@@ -181,4 +181,50 @@ defmodule Cerbero.Migration.ParserTest do
              end
              """)
   end
+
+  test "find_module: prefers the module with `use Ecto.Migration` over a preceding helper module" do
+    {:ok, m} =
+      Parser.parse_string("""
+      defmodule NotIt do
+        def helper, do: :ok
+      end
+
+      defmodule AppRepo.Migrations.Real do
+        use Ecto.Migration
+
+        def change do
+          create index(:events, [:org_id])
+        end
+      end
+      """)
+
+    assert m.module == "AppRepo.Migrations.Real"
+    assert [%CreateIndex{table: "events", keys: ["org_id"]}] = m.operations
+  end
+
+  test "create_if_not_exists table is treated like create table" do
+    assert [%CreateTable{table: "t", columns: [%{name: "org_id", type: :integer, opts: []}]}] =
+             ops!("""
+             defmodule M do
+               use Ecto.Migration
+               def change do
+                 create_if_not_exists table(:t) do
+                   add :org_id, :integer
+                 end
+               end
+             end
+             """)
+  end
+
+  test "create_if_not_exists constraint is treated like create constraint" do
+    assert [%CreateConstraint{table: "t", name: "c", check: "x > 0", validate: true}] =
+             ops!("""
+             defmodule M do
+               use Ecto.Migration
+               def change do
+                 create_if_not_exists constraint(:t, "c", check: "x > 0")
+               end
+             end
+             """)
+  end
 end
