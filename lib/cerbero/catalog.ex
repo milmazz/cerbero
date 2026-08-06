@@ -6,6 +6,8 @@ defmodule Cerbero.Catalog do
   row; unknown scale is unbounded, never small.
   """
 
+  import Kernel, except: [apply: 2]
+
   alias Cerbero.{Config, Snapshot}
   alias Cerbero.Snapshot.{Staleness, Table}
 
@@ -167,6 +169,277 @@ defmodule Cerbero.Catalog do
     case table(cat, table_name) do
       nil -> nil
       %Table{constraints: cons} -> Enum.find(cons, &(&1.name == constraint_name))
+    end
+  end
+
+  alias Cerbero.Migration
+  alias Cerbero.Operation, as: Op
+  alias Cerbero.SQL.Classifier.Classified
+
+  @spec apply_migration(t(), Migration.t()) :: t()
+  def apply_migration(cat, %Migration{operations: ops}), do: Enum.reduce(ops, cat, &apply(&2, &1))
+
+  @spec apply(t(), struct()) :: t()
+  def apply(cat, %Op.CreateTable{table: name, columns: columns}) do
+    born_table(cat, name, Enum.map(columns, &overlay_column/1))
+  end
+
+  def apply(cat, %Op.DropTable{table: name}) do
+    %{
+      cat
+      | tables: Map.delete(cat.tables, qualify(name)),
+        born: MapSet.delete(cat.born, qualify(name))
+    }
+  end
+
+  def apply(cat, %Op.AlterTable{table: name, ops: alter_ops}) do
+    update_table(cat, name, fn t -> Enum.reduce(alter_ops, t, &apply_alter/2) end)
+  end
+
+  def apply(cat, %Op.CreateIndex{table: name, keys: keys, unique: unique}) do
+    idx = %{
+      name: "#{name}_#{Enum.map_join(keys, "_", &to_string/1)}_index",
+      unique: unique,
+      primary: false,
+      valid: true,
+      method: "btree",
+      partial: false,
+      bytes: 0,
+      keys:
+        Enum.map(keys, fn
+          :expression -> %{kind: :expression}
+          k -> %{kind: :column, name: k}
+        end)
+    }
+
+    update_table(cat, name, fn t -> %{t | indexes: t.indexes ++ [idx]} end)
+  end
+
+  def apply(cat, %Op.DropIndex{}), do: cat
+
+  def apply(cat, %Op.CreateConstraint{table: name, name: cname, check: check, validate: validate}) do
+    is_nn =
+      case check && Regex.run(~r/^\s*(\w+)\s+is\s+not\s+null\s*$/i, check) do
+        [_, col] -> col
+        _ -> nil
+      end
+
+    con = %{
+      name: cname,
+      type: :check,
+      columns: [],
+      validated: validate,
+      references: nil,
+      on_delete: nil,
+      on_update: nil,
+      is_not_null_check_on: is_nn
+    }
+
+    update_table(cat, name, fn t -> %{t | constraints: t.constraints ++ [con]} end)
+  end
+
+  def apply(cat, %Op.RawSQL{classified: classified}),
+    do: Enum.reduce(classified, cat, &apply_sql(&2, &1))
+
+  def apply(cat, %Op.RenameOp{}), do: cat
+  def apply(cat, %Op.Unknown{}), do: cat
+
+  defp apply_sql(cat, %Classified{class: :create_table, table: name}),
+    do: born_table(cat, name, [])
+
+  defp apply_sql(cat, %Classified{class: :drop_table, table: name}),
+    do: apply(cat, %Op.DropTable{table: name})
+
+  defp apply_sql(cat, %Classified{
+         class: :add_check_is_not_null,
+         table: name,
+         column: col,
+         constraint: cname,
+         not_valid: nv
+       }) do
+    con = %{
+      name: cname,
+      type: :check,
+      columns: [col],
+      validated: not nv,
+      references: nil,
+      on_delete: nil,
+      on_update: nil,
+      is_not_null_check_on: col
+    }
+
+    update_table(cat, name, fn t -> %{t | constraints: t.constraints ++ [con]} end)
+  end
+
+  defp apply_sql(cat, %Classified{class: :validate_constraint, table: name, constraint: cname}) do
+    update_table(cat, name, fn t ->
+      %{
+        t
+        | constraints:
+            Enum.map(t.constraints, fn con ->
+              if con.name == cname, do: %{con | validated: true}, else: con
+            end)
+      }
+    end)
+  end
+
+  defp apply_sql(cat, %Classified{class: :set_not_null, table: name, column: col}) do
+    update_column(cat, name, col, &%{&1 | not_null: true})
+  end
+
+  defp apply_sql(cat, %Classified{class: :add_column, table: name, column: col}) do
+    update_table(cat, name, fn t ->
+      %{
+        t
+        | columns:
+            t.columns ++
+              [
+                %{
+                  name: col,
+                  type: "unknown",
+                  not_null: false,
+                  identity: false,
+                  generated: nil,
+                  default: nil
+                }
+              ]
+      }
+    end)
+  end
+
+  defp apply_sql(cat, %Classified{class: :drop_column, table: name, column: col}) do
+    update_table(cat, name, fn t -> %{t | columns: Enum.reject(t.columns, &(&1.name == col))} end)
+  end
+
+  defp apply_sql(cat, %Classified{class: :create_index, table: name}) when is_binary(name) do
+    update_table(cat, name, fn t ->
+      idx = %{
+        name: "raw_sql_index_#{length(t.indexes)}",
+        unique: false,
+        primary: false,
+        valid: true,
+        method: "btree",
+        partial: false,
+        bytes: 0,
+        keys: [%{kind: :expression}]
+      }
+
+      %{t | indexes: t.indexes ++ [idx]}
+    end)
+  end
+
+  defp apply_sql(cat, %Classified{class: dml, table: name})
+       when dml in [:update, :delete, :insert_select] and is_binary(name) do
+    %{cat | backfilled: MapSet.put(cat.backfilled, qualify(name))}
+  end
+
+  defp apply_sql(cat, %Classified{}), do: cat
+
+  defp apply_alter({:add_column, name, type, opts}, t) do
+    col = %{
+      name: name,
+      type: overlay_type(type),
+      not_null: Keyword.get(opts, :null) == false,
+      identity: false,
+      generated: nil,
+      default: overlay_default(opts)
+    }
+
+    %{t | columns: t.columns ++ [col]}
+  end
+
+  defp apply_alter({:modify_column, name, type, opts}, t) do
+    %{
+      t
+      | columns:
+          Enum.map(t.columns, fn col ->
+            if col.name == name do
+              col = if type, do: %{col | type: overlay_type(type)}, else: col
+
+              case Keyword.get(opts, :null) do
+                false -> %{col | not_null: true}
+                true -> %{col | not_null: false}
+                nil -> col
+              end
+            else
+              col
+            end
+          end)
+    }
+  end
+
+  defp apply_alter({:remove_column, name}, t),
+    do: %{t | columns: Enum.reject(t.columns, &(&1.name == name))}
+
+  defp apply_alter(_other, t), do: t
+
+  defp born_table(cat, name, columns) do
+    qname = qualify(name)
+    [schema, bare] = String.split(qname, ".", parts: 2)
+
+    t = %Snapshot.Table{
+      schema: schema,
+      name: bare,
+      partitioned: false,
+      partition_of: nil,
+      reltuples: 0.0,
+      relpages: 0,
+      n_live_tup: 0,
+      last_analyze: nil,
+      last_autoanalyze: nil,
+      seq_scan: 0,
+      idx_scan: 0,
+      n_tup_ins: 0,
+      n_tup_upd: 0,
+      n_tup_del: 0,
+      heap_bytes: 0,
+      total_bytes: 0,
+      columns: columns,
+      indexes: [],
+      constraints: []
+    }
+
+    %{cat | tables: Map.put(cat.tables, qname, t), born: MapSet.put(cat.born, qname)}
+  end
+
+  defp update_table(cat, name, fun) do
+    case table(cat, name) do
+      nil -> cat
+      t -> %{cat | tables: Map.put(cat.tables, qualify(name), fun.(t))}
+    end
+  end
+
+  defp update_column(cat, table_name, col_name, fun) do
+    update_table(cat, table_name, fn t ->
+      %{t | columns: Enum.map(t.columns, &if(&1.name == col_name, do: fun.(&1), else: &1))}
+    end)
+  end
+
+  defp overlay_column(%{name: name, type: type, opts: opts}) do
+    %{
+      name: name,
+      type: overlay_type(type),
+      not_null: Keyword.get(opts, :null) == false,
+      identity: false,
+      generated: nil,
+      default: overlay_default(opts)
+    }
+  end
+
+  defp overlay_type({:references, _table, _opts}), do: "bigint"
+  defp overlay_type(nil), do: "unknown"
+  defp overlay_type(type), do: to_string_type(type)
+
+  defp to_string_type(t) when is_atom(t), do: Atom.to_string(t)
+  defp to_string_type(t) when is_binary(t), do: t
+  defp to_string_type({:dynamic, s}), do: s
+
+  defp overlay_default(opts) do
+    case Keyword.fetch(opts, :default) do
+      :error -> nil
+      {:ok, {:fragment, _}} -> %{present: true, volatile: true, kind: :expression}
+      {:ok, {:dynamic, _}} -> %{present: true, volatile: true, kind: :expression}
+      {:ok, _literal} -> %{present: true, volatile: false, kind: :literal}
     end
   end
 end
