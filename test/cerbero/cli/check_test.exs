@@ -121,4 +121,39 @@ defmodule Cerbero.CLI.CheckTest do
     assert code in [0, 1]
     assert output =~ "no snapshot: structural checks only, scale unknown"
   end
+
+  test "empty migrations_paths in config and no --migrations flag is exit 2, not a crash" do
+    path = Path.join(System.tmp_dir!(), ".cerbero_empty_migrations.exs")
+    File.write!(path, "[migrations_paths: []]")
+    on_exit(fn -> File.rm(path) end)
+
+    {code, output} = run(["--config", path])
+
+    assert code == 2
+    assert output =~ "config migrations_paths is empty; pass --migrations or fix .cerbero.exs"
+  end
+
+  test "--migrations pointing at a nonexistent directory is exit 2, not a silent all-clear" do
+    {code, output} =
+      run(["--no-snapshot", "--migrations", "no/such/dir", "--config", "nonexistent"])
+
+    assert code == 2
+    assert output =~ "migrations directory not found: no/such/dir"
+  end
+
+  test "an existing but empty migrations directory is a valid 0-pending case" do
+    dir =
+      Path.join(
+        System.tmp_dir!(),
+        "cerbero_empty_migrations_#{System.unique_integer([:positive])}"
+      )
+
+    File.mkdir_p!(dir)
+    on_exit(fn -> File.rm_rf(dir) end)
+
+    {code, _output} =
+      run(["--snapshot", @snapshot, "--migrations", dir, "--config", "nonexistent"])
+
+    assert code == 0
+  end
 end

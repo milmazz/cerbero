@@ -60,12 +60,30 @@ defmodule Cerbero.CLI.Check do
   end
 
   defp parse_migrations(parsed, config) do
-    dir = parsed[:migrations] || hd(config.migrations_paths)
-
-    case Parser.parse_dir(dir) do
-      {:ok, migrations} -> {:ok, migrations}
+    with {:ok, dir} <- migrations_dir(parsed, config),
+         :ok <- ensure_directory(dir),
+         {:ok, migrations} <- Parser.parse_dir(dir) do
+      {:ok, migrations}
+    else
       {:error, {path, reason}} -> {:error, "cannot parse #{path}: #{inspect(reason)}"}
+      {:error, reason} -> {:error, reason}
     end
+  end
+
+  defp migrations_dir(parsed, config) do
+    case parsed[:migrations] do
+      nil -> first_migrations_path(config.migrations_paths)
+      dir -> {:ok, dir}
+    end
+  end
+
+  defp first_migrations_path([dir | _]) when is_binary(dir), do: {:ok, dir}
+
+  defp first_migrations_path(_),
+    do: {:error, "config migrations_paths is empty; pass --migrations or fix .cerbero.exs"}
+
+  defp ensure_directory(dir) do
+    if File.dir?(dir), do: :ok, else: {:error, "migrations directory not found: #{dir}"}
   end
 
   defp fail_on(parsed, config) do
