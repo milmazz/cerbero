@@ -40,9 +40,10 @@ ingests the result.
 What is *not* claimed: table/column names are exported (they already appear in
 your migration files); row counts and byte sizes are business metrics and will
 be visible to everyone with repo access, forever — opt into
-`precision: :order_of_magnitude` to bucket them. A hot-standby snapshot has
-degraded traffic stats (recorded and warned); a scrubbed subset copy produces
-confidently wrong scale and is incompatible with scale judgment.
+`precision: :order_of_magnitude` to bucket them (planned; the config key is
+reserved, bucketing lands with the exporter follow-up). A hot-standby snapshot
+has degraded traffic stats (recorded and warned); a scrubbed subset copy
+produces confidently wrong scale and is incompatible with scale judgment.
 
 The checksum detects corruption and hand-edits. It is not tamper-proofing:
 anyone who can commit can regenerate it.
@@ -59,7 +60,7 @@ knowledge:
 |---|---|---|
 | Non-concurrent index | always warns | severity from actual rows/bytes/traffic; silent on small cold tables; correct per-partition recipe on partitioned parents |
 | SET NOT NULL | always warns | silent if already NOT NULL; recognizes the validated-CHECK scan-skip (PG ≥ 12), including its own recommended two-step in raw SQL |
-| Type change | cannot see the current type | `varchar(50)→varchar(255)` silent; `int→bigint` on 412M rows: error, with the index rebuilds named |
+| Type change | cannot see the current type | `varchar(50)→varchar(255)`: info note only (lock_timeout caveat), never blocks CI; `int→bigint` on 412M rows: error, with the index rebuilds named |
 | FK without index | cannot know | rule impossible without the catalog |
 | ADD FOREIGN KEY | flags the statement | names the *referenced* table whose writes block while the referencing table is scanned |
 | CockroachDB | n/a | engine-conditional verdicts + the CRDB limitation table (rejects before your deploy does) |
@@ -68,7 +69,8 @@ knowledge:
 
 Three of cerbero's ten rules are impossible without catalog knowledge; five
 are severity upgrades where the catalog changes whether CI fails; one is kept
-for self-consistency. If you want AST-only checks with zero setup,
+for self-consistency, plus `snapshot_health`, which judges the snapshot itself
+rather than a migration. If you want AST-only checks with zero setup,
 excellent_migrations remains the right tool — cerbero's no-snapshot mode
 (`--no-snapshot`) gives you a comparable structural baseline plus a trial path.
 
@@ -96,7 +98,7 @@ CockroachDB only — no adapter behaviour in v1.
       skip_checks: [],
       severity_overrides: %{},    # e.g. %{snapshot_health: :error}
       start_after: nil,
-      precision: :exact,          # or :order_of_magnitude
+      precision: :exact,          # :order_of_magnitude is reserved (bucketing planned)
       schemas: ["public"],
       snapshot_path: "priv/repo/cerbero_snapshot.json",
       migrations_paths: ["priv/repo/migrations"]
