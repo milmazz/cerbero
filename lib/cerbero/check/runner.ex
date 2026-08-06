@@ -8,6 +8,8 @@ defmodule Cerbero.Check.Runner do
     [
       Cerbero.Check.UnsafeIndexCreation,
       Cerbero.Check.ConcurrentIndexRequiresAttributes,
+      Cerbero.Check.NotNullOnPopulatedTable,
+      Cerbero.Check.ColumnDefaultRewrite,
       Cerbero.Check.MetaFindings
     ]
   end
