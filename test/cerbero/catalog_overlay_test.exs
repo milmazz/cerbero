@@ -96,4 +96,18 @@ defmodule Cerbero.CatalogOverlayTest do
     cat = base_catalog([table("legacy")]) |> apply_source("drop table(:legacy)")
     refute Catalog.known?(cat, "legacy")
   end
+
+  test "drop-and-recreate clears backfilled mark (regression)" do
+    cat =
+      base_catalog()
+      |> apply_source("create table(:events_v2) do\n add :x, :bigint\n end")
+      |> apply_source(~s|execute "INSERT INTO events_v2 SELECT * FROM events"|)
+      |> apply_source("drop table(:events_v2)")
+      |> apply_source("create table(:events_v2) do\n add :x, :bigint\n end")
+
+    assert Catalog.known?(cat, "events_v2")
+    assert Catalog.born?(cat, "events_v2")
+    refute Catalog.backfilled?(cat, "events_v2")
+    assert Catalog.scale(cat, "events_v2") == :zero
+  end
 end

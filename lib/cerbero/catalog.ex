@@ -185,10 +185,13 @@ defmodule Cerbero.Catalog do
   end
 
   def apply(cat, %Op.DropTable{table: name}) do
+    qname = qualify(name)
+
     %{
       cat
-      | tables: Map.delete(cat.tables, qualify(name)),
-        born: MapSet.delete(cat.born, qualify(name))
+      | tables: Map.delete(cat.tables, qname),
+        born: MapSet.delete(cat.born, qname),
+        backfilled: MapSet.delete(cat.backfilled, qname)
     }
   end
 
@@ -224,16 +227,7 @@ defmodule Cerbero.Catalog do
         _ -> nil
       end
 
-    con = %{
-      name: cname,
-      type: :check,
-      columns: [],
-      validated: validate,
-      references: nil,
-      on_delete: nil,
-      on_update: nil,
-      is_not_null_check_on: is_nn
-    }
+    con = make_check_constraint(cname, validate, [], is_nn)
 
     update_table(cat, name, fn t -> %{t | constraints: t.constraints ++ [con]} end)
   end
@@ -257,16 +251,7 @@ defmodule Cerbero.Catalog do
          constraint: cname,
          not_valid: nv
        }) do
-    con = %{
-      name: cname,
-      type: :check,
-      columns: [col],
-      validated: not nv,
-      references: nil,
-      on_delete: nil,
-      on_update: nil,
-      is_not_null_check_on: col
-    }
+    con = make_check_constraint(cname, not nv, [col], col)
 
     update_table(cat, name, fn t -> %{t | constraints: t.constraints ++ [con]} end)
   end
@@ -441,5 +426,18 @@ defmodule Cerbero.Catalog do
       {:ok, {:dynamic, _}} -> %{present: true, volatile: true, kind: :expression}
       {:ok, _literal} -> %{present: true, volatile: false, kind: :literal}
     end
+  end
+
+  defp make_check_constraint(name, validated, columns, is_not_null_check_on) do
+    %{
+      name: name,
+      type: :check,
+      columns: columns,
+      validated: validated,
+      references: nil,
+      on_delete: nil,
+      on_update: nil,
+      is_not_null_check_on: is_not_null_check_on
+    }
   end
 end
