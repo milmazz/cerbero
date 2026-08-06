@@ -270,6 +270,20 @@ defmodule Cerbero.SQL.Classifier do
 
       m =
           run(
+            ~r/^alter table (?:only )?(?:if exists )?#{@ident} add (?:constraint (\S+) )?primary key/,
+            n
+          ) ->
+        %Classified{class: :add_primary_key, table: unq(m[1]), constraint: unq(m[2])}
+
+      m =
+          run(
+            ~r/^alter table (?:only )?(?:if exists )?#{@ident} add (?:constraint (\S+) )?unique/,
+            n
+          ) ->
+        %Classified{class: :add_unique, table: unq(m[1]), constraint: unq(m[2])}
+
+      m =
+          run(
             ~r/^alter table (?:only )?(?:if exists )?#{@ident} add (?:column )?(?:if not exists )?(\S+) /,
             n
           ) ->

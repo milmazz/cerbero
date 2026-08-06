@@ -15,6 +15,7 @@ defmodule Cerbero.Check.Runner do
       Cerbero.Check.FKMissingIndex,
       Cerbero.Check.CRDBTransactionalDDL,
       Cerbero.Check.DMLInMigration,
+      Cerbero.Check.RawDDLSafety,
       Cerbero.Check.MetaFindings
     ]
   end
@@ -44,6 +45,7 @@ defmodule Cerbero.Check.Runner do
             |> apply_override(config)
             |> apply_skip(migration)
             |> apply_config_skip(check_module_id, config)
+            |> apply_lock_timeout_attestation(config)
           end)
 
         {findings, Catalog.apply_migration(cat, migration)}
@@ -76,4 +78,21 @@ defmodule Cerbero.Check.Runner do
       finding
     end
   end
+
+  # `lock_timeout_attested: true` is the team affirming their migration
+  # sessions already set one (design §4). This only ANNOTATES findings
+  # that talk about a lock a `lock_timeout` would bound — it never changes
+  # severity or silences anything; wired centrally here so every rule gets
+  # it for free instead of each one re-implementing the same string check.
+  defp apply_lock_timeout_attestation(%Finding{message: message} = finding, %Config{
+         lock_timeout_attested: true
+       }) do
+    if message =~ "lock_timeout" or message =~ "ACCESS EXCLUSIVE" do
+      %{finding | message: message <> " (lock_timeout attested in .cerbero.exs)"}
+    else
+      finding
+    end
+  end
+
+  defp apply_lock_timeout_attestation(%Finding{} = finding, %Config{}), do: finding
 end

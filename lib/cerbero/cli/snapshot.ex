@@ -1,12 +1,22 @@
 defmodule Cerbero.CLI.Snapshot do
-  @moduledoc "argv for mix cerbero.snapshot: --url | --emit-sql | --from-file, --out, --migration-source."
+  @moduledoc """
+  argv for mix cerbero.snapshot: --url | --emit-sql | --from-file, --out,
+  --config, --migration-source.
 
-  alias Cerbero.Snapshot
+  Loads `.cerbero.exs` (or the path given via `--config`) the same way
+  `mix cerbero.check` does, so `config.schemas` governs which schemas the
+  exporter reads instead of the connection always being hardcoded to
+  `["public"]`. A bad config is an operational error (exit 2), same
+  category as an unreachable database.
+  """
+
+  alias Cerbero.{Config, Snapshot}
   alias Cerbero.Snapshot.Exporter
 
   @switches [
     url: :string,
     out: :string,
+    config: :string,
     emit_sql: :boolean,
     from_file: :string,
     migration_source: :string
@@ -19,6 +29,13 @@ defmodule Cerbero.CLI.Snapshot do
     {parsed, _, _} = OptionParser.parse(argv, strict: @switches)
     out = parsed[:out] || "priv/repo/cerbero_snapshot.json"
 
+    case Config.load(parsed[:config] || ".cerbero.exs") do
+      {:ok, config} -> do_run(parsed, config, out, clock, io)
+      {:error, reason} -> error(io, reason)
+    end
+  end
+
+  defp do_run(parsed, config, out, clock, io) do
     result =
       cond do
         parsed[:emit_sql] ->
@@ -30,6 +47,7 @@ defmodule Cerbero.CLI.Snapshot do
         parsed[:url] ->
           Exporter.export(parsed[:url],
             clock: clock,
+            schemas: config.schemas,
             migration_source: parsed[:migration_source] || "schema_migrations"
           )
 
@@ -48,8 +66,12 @@ defmodule Cerbero.CLI.Snapshot do
         0
 
       {:error, reason} ->
-        IO.write(io, "cerbero: error: #{inspect(reason)}\n")
-        2
+        error(io, reason)
     end
+  end
+
+  defp error(io, reason) do
+    IO.write(io, "cerbero: error: #{inspect(reason)}\n")
+    2
   end
 end

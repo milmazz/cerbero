@@ -69,6 +69,25 @@ defmodule Cerbero.Check.UnsafeIndexCreationTest do
     assert msg =~ "DROP INDEX CONCURRENTLY"
   end
 
+  test "raw ADD PRIMARY KEY on 412M rows is an error (not misclassified as add_column)" do
+    assert [%Finding{check: :unsafe_index_creation, severity: :error, message: msg}] =
+             judge_rule(
+               [big_events_table()],
+               ~s|execute "ALTER TABLE events ADD PRIMARY KEY (id)"|
+             )
+
+    assert msg =~ "ACCESS EXCLUSIVE"
+    assert msg =~ "full-table scan"
+  end
+
+  test "raw ADD CONSTRAINT ... PRIMARY KEY (named) on 412M rows is an error" do
+    assert [%Finding{check: :unsafe_index_creation, severity: :error}] =
+             judge_rule(
+               [big_events_table()],
+               ~s|execute "ALTER TABLE events ADD CONSTRAINT events_pkey PRIMARY KEY (id)"|
+             )
+  end
+
   test "CRDB: lock warning suppressed, cost finding remains at scale" do
     crdb = %{"engine" => %{"name" => "cockroachdb", "version" => "25.1", "version_num" => 25_100}}
 

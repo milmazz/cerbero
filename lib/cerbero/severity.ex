@@ -39,8 +39,12 @@ defmodule Cerbero.Severity do
     end
   end
 
-  # Metadata-only under AEL: gate on traffic OR rows; never silent.
-  def assess(:access_exclusive, :metadata_only, scale, traffic, %Config{} = c, mult) do
+  # Metadata-only under a write-blocking lock (AEL, or SHARE ROW EXCLUSIVE
+  # e.g. ADD FOREIGN KEY ... NOT VALID): gate on traffic OR rows; never
+  # silent. Not just :access_exclusive — SHARE and SHARE ROW EXCLUSIVE also
+  # queue behind long-running transactions, same mechanism, same floor.
+  def assess(lock, :metadata_only, scale, traffic, %Config{} = c, mult)
+      when lock in @write_blocking do
     rows =
       case scale do
         {:rows, n, _} -> n

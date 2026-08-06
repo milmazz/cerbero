@@ -52,6 +52,20 @@ defmodule Cerbero.SQL.ClassifierTest do
              one("ALTER TABLE events ALTER COLUMN org_id SET NOT NULL")
   end
 
+  test "raw ADD PRIMARY KEY / ADD UNIQUE are their own classes, not swallowed by add_column" do
+    assert %Classified{class: :add_primary_key, table: "events", constraint: nil} =
+             one("ALTER TABLE events ADD PRIMARY KEY (id)")
+
+    assert %Classified{class: :add_primary_key, table: "events", constraint: "events_pkey"} =
+             one("ALTER TABLE events ADD CONSTRAINT events_pkey PRIMARY KEY (id)")
+
+    assert %Classified{class: :add_unique, table: "events", constraint: nil} =
+             one("ALTER TABLE events ADD UNIQUE (org_id)")
+
+    assert %Classified{class: :add_unique, table: "events", constraint: "events_org_id_key"} =
+             one("ALTER TABLE events ADD CONSTRAINT events_org_id_key UNIQUE (org_id)")
+  end
+
   test "generic check, fk, type change, add column" do
     assert %Classified{class: :add_check, not_valid: false} =
              one("ALTER TABLE t ADD CONSTRAINT positive CHECK (price > 0)")

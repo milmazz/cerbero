@@ -44,6 +44,7 @@ defmodule Cerbero.Snapshot.Exporter do
     columns = rows(q!(conn, Queries.columns(), [schemas]))
     indexes = rows(q!(conn, Queries.indexes(engine["name"]), [schemas]))
     constraints = rows(q!(conn, Queries.constraints(), [schemas]))
+    crdb_row_counts = crdb_row_counts(conn, engine["name"])
 
     applied =
       case q(conn, Queries.applied_migrations(quote_ident(migration_source))) do
@@ -74,9 +75,32 @@ defmodule Cerbero.Snapshot.Exporter do
        "standby" => standby,
        "stats_provenance" => if(standby, do: "standby", else: "primary"),
        "stats_reset" => stats_reset && DateTime.to_iso8601(stats_reset),
-       "tables" => assemble_tables(tables, columns, indexes, constraints)
+       "tables" => assemble_tables(tables, columns, indexes, constraints, crdb_row_counts)
      }}
   end
+
+  # CRDB leaves pg_class.reltuples/relpages NULL and its pg_stat_user_tables
+  # shim yields no n_live_tup either (confirmed empirically against a live
+  # v25.1 node) — without this, every CRDB table's row scale would be
+  # unknown, and `n_live_tup || 0` used to paper over that with a
+  # fabricated zero (Catalog.scale then read it as {:rows, 0, 0}: every
+  # scale rule silently passed). crdb_internal.table_row_statistics is the
+  # engine's own row-count estimate (design §1); wiring it into n_live_tup
+  # during assembly gives CRDB tables a real signal instead of a lie.
+  # `estimated_row_count` is itself nullable until `CREATE STATISTICS` (or
+  # auto stats) has run for a table — that nil is preserved, never zeroed.
+  # Keyed by bare table name (the view has no schema column); a
+  # same-named table in two configured schemas could collide, an accepted
+  # limitation for a spike whose default (and typical) config is a single
+  # schema.
+  defp crdb_row_counts(conn, "cockroachdb") do
+    conn
+    |> q!(Queries.crdb_row_counts())
+    |> rows()
+    |> Map.new(fn [name, count] -> {name, count} end)
+  end
+
+  defp crdb_row_counts(_conn, _postgres), do: %{}
 
   defp detect_engine(conn) do
     [[probe]] = rows(q!(conn, Queries.crdb_probe()))
@@ -110,7 +134,7 @@ defmodule Cerbero.Snapshot.Exporter do
     end
   end
 
-  defp assemble_tables(tables, columns, indexes, constraints) do
+  defp assemble_tables(tables, columns, indexes, constraints, crdb_row_counts \\ %{}) do
     col_by = Enum.group_by(columns, fn [schema, table | _] -> {schema, table} end)
     idx_by = Enum.group_by(indexes, fn [schema, table | _] -> {schema, table} end)
     con_by = Enum.group_by(constraints, fn [schema, table | _] -> {schema, table} end)
@@ -145,7 +169,12 @@ defmodule Cerbero.Snapshot.Exporter do
         # nil (an honest "unknown"), same as heap_bytes/total_bytes below.
         "reltuples" => reltuples && reltuples * 1.0,
         "relpages" => relpages,
-        "n_live_tup" => n_live_tup || 0,
+        # Same honesty rule as reltuples above: prefer the engine's own
+        # activity-stats count, fall back to CRDB's row-statistics estimate
+        # (map lookup on a table without stats yields nil too), and NEVER
+        # coerce a true "the engine gave no signal" into 0 — Catalog.scale
+        # treats nil/nil as :unknown, not zero (see Catalog.row_estimate).
+        "n_live_tup" => n_live_tup || Map.get(crdb_row_counts, name),
         "last_analyze" => iso(last_analyze),
         "last_autoanalyze" => iso(last_autoanalyze),
         "seq_scan" => seq_scan || 0,

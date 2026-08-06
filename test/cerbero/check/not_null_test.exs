@@ -68,6 +68,32 @@ defmodule Cerbero.Check.NotNullTest do
              judge_rule([t], ~s|execute "ALTER TABLE events ALTER COLUMN org_id SET NOT NULL"|)
   end
 
+  test "CRDB: online validation scan cost note, never 'ACCESS EXCLUSIVE'" do
+    crdb = %{"engine" => %{"name" => "cockroachdb", "version" => "25.1", "version_num" => 25_100}}
+
+    assert [%Finding{severity: :warning, message: msg}] =
+             judge_rule(
+               [big_events_table()],
+               "modify :org_id, :bigint, null: false" |> in_alter("events"),
+               snapshot: crdb
+             )
+
+    refute msg =~ "ACCESS EXCLUSIVE"
+    assert msg =~ "online validation scan"
+  end
+
+  test "CRDB: small table is silent" do
+    crdb = %{"engine" => %{"name" => "cockroachdb", "version" => "25.1", "version_num" => 25_100}}
+    small = table("events", %{"columns" => [column("org_id")]})
+
+    assert [] =
+             judge_rule(
+               [small],
+               "modify :org_id, :bigint, null: false" |> in_alter("events"),
+               snapshot: crdb
+             )
+  end
+
   test "silent when table is born in this migration, unbackfilled" do
     # Create table and modify column in same migration: should be silent (born_this_deploy rule)
     assert [] =

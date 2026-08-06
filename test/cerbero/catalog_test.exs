@@ -68,6 +68,37 @@ defmodule Cerbero.CatalogTest do
     refute Catalog.known?(cat, "ghost")
   end
 
+  test "reltuples AND n_live_tup both nil (CRDB gave no signal): scale is :unknown, never zero" do
+    # This is exactly what a CRDB table with no collected row statistics
+    # looks like after the exporter fix: nil, not a fabricated 0.
+    cat = catalog([table("events", %{"reltuples" => nil, "n_live_tup" => nil})])
+    assert Catalog.scale(cat, "events") == :unknown
+  end
+
+  test "reltuples nil but n_live_tup known: falls back to n_live_tup, not :unknown" do
+    cat = catalog([table("events", %{"reltuples" => nil, "n_live_tup" => 3_000})])
+    assert {:rows, 3_000, _} = Catalog.scale(cat, "events")
+  end
+
+  test "a partition with both reltuples and n_live_tup nil poisons the parent's sum to :unknown" do
+    cat =
+      catalog([
+        table("events", %{"partitioned" => true, "reltuples" => nil, "n_live_tup" => nil}),
+        table("events_p0", %{
+          "partition_of" => "public.events",
+          "reltuples" => nil,
+          "n_live_tup" => nil
+        }),
+        table("events_p1", %{
+          "partition_of" => "public.events",
+          "n_live_tup" => 250,
+          "reltuples" => 250.0
+        })
+      ])
+
+    assert Catalog.scale(cat, "events") == :unknown
+  end
+
   test "degraded staleness makes every scale unknown" do
     cat = catalog([table("events", %{"n_live_tup" => 5})], %{}, scale_mode: :unbounded)
     assert Catalog.scale(cat, "events") == :unknown

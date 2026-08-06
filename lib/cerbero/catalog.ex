@@ -78,9 +78,17 @@ defmodule Cerbero.Catalog do
 
       true ->
         case table(cat, name) do
-          nil -> :unknown
-          %Table{partitioned: true} -> partition_sum(cat, qualify(name))
-          %Table{} = t -> {:rows, row_estimate(t), t.heap_bytes || 0}
+          nil ->
+            :unknown
+
+          %Table{partitioned: true} ->
+            partition_sum(cat, qualify(name))
+
+          %Table{} = t ->
+            case row_estimate(t) do
+              :unknown -> :unknown
+              rows -> {:rows, rows, t.heap_bytes || 0}
+            end
         end
     end
   end
@@ -96,19 +104,29 @@ defmodule Cerbero.Catalog do
         :unknown
 
       _ ->
-        Enum.reduce(partitions, {:rows, 0, 0}, fn t, {:rows, rows, bytes} ->
-          {:rows, rows + row_estimate(t), bytes + (t.heap_bytes || 0)}
+        # A partition whose own scale is unknown must not silently
+        # contribute 0 to the sum — that would let one instrumented
+        # partition mask an uninstrumented sibling. Unknown poisons the
+        # whole parent's scale to :unknown (unbounded), never small.
+        Enum.reduce_while(partitions, {:rows, 0, 0}, fn t, {:rows, rows, bytes} ->
+          case row_estimate(t) do
+            :unknown -> {:halt, :unknown}
+            r -> {:cont, {:rows, rows + r, bytes + (t.heap_bytes || 0)}}
+          end
         end)
     end
   end
 
+  # CRDB leaves both reltuples and n_live_tup NULL when the engine has
+  # collected no row-statistics for a table yet (see the exporter's
+  # crdb_row_counts wiring). When BOTH are unknown, the table's scale is
+  # :unknown — never a fabricated 0, which would let every scale rule
+  # silently pass on an uninstrumented CRDB table.
   defp row_estimate(%Table{reltuples: rt, n_live_tup: nlt}) do
-    nlt = nlt || 0
-
-    if is_number(rt) and rt >= 0 do
-      max(trunc(rt), nlt)
-    else
-      nlt
+    cond do
+      is_number(rt) and rt >= 0 -> max(trunc(rt), nlt || 0)
+      is_integer(nlt) -> nlt
+      true -> :unknown
     end
   end
 

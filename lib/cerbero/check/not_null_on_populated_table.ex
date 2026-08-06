@@ -63,6 +63,9 @@ defmodule Cerbero.Check.NotNullOnPopulatedTable do
           )
         ]
 
+      catalog.engine == :cockroachdb ->
+        crdb_finding(table, column, line, migration, catalog, config)
+
       true ->
         scale = Catalog.scale(catalog, table)
         traffic = Catalog.traffic(catalog, table, config)
@@ -94,6 +97,51 @@ defmodule Cerbero.Check.NotNullOnPopulatedTable do
             )
           ]
         end
+    end
+  end
+
+  # CockroachDB validates SET NOT NULL against existing rows with an online
+  # scan (no table-level blocking lock, unlike PG's ACCESS EXCLUSIVE) — the
+  # PG message's "full-table scan under ACCESS EXCLUSIVE" claim is simply
+  # false there. Same tiering as rule 3's CRDB cost note (column_default_rewrite.ex):
+  # >= rows_error warns, >= rows_warning informs, below that is silent;
+  # unknown scale warns (unbounded, never small).
+  defp crdb_finding(table, column, line, migration, catalog, config) do
+    qualified = Catalog.qualify(table)
+
+    with {:rows, rows, _} <- Catalog.scale(catalog, table),
+         true <- rows >= config.rows_warning * catalog.multiplier do
+      severity = if rows >= config.rows_error * catalog.multiplier, do: :warning, else: :info
+
+      [
+        Helpers.finding(
+          __MODULE__,
+          severity,
+          "SET NOT NULL on #{qualified}.#{column} (#{Helpers.describe_scale(catalog, table)}) " <>
+            "runs as an online validation scan on CockroachDB, consuming cluster resources at scale",
+          migration,
+          line,
+          relations: [qualified],
+          engine: :cockroachdb
+        )
+      ]
+    else
+      :unknown ->
+        [
+          Helpers.finding(
+            __MODULE__,
+            :warning,
+            "SET NOT NULL on #{qualified}.#{column} (scale unknown — treated as unbounded) " <>
+              "runs as an online validation scan on CockroachDB, consuming cluster resources at scale",
+            migration,
+            line,
+            relations: [qualified],
+            engine: :cockroachdb
+          )
+        ]
+
+      _ ->
+        []
     end
   end
 end

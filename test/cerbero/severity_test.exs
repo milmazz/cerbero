@@ -26,6 +26,11 @@ defmodule Cerbero.SeverityTest do
     {:access_exclusive, :metadata_only, {:rows, 200_000, 8_192}, :cold, 1.0, :warning},
     {:access_exclusive, :metadata_only, {:rows, 10, 8_192}, :cold, 1.0, :info},
     {:access_exclusive, :metadata_only, :zero, :cold, 1.0, :info},
+    # SHARE ROW EXCLUSIVE + metadata-only (e.g. ADD FOREIGN KEY ... NOT
+    # VALID) gets the same never-silent floor as ACCESS EXCLUSIVE — it's
+    # still a write-blocking lock queuing behind long-running queries.
+    {:share_row_exclusive, :metadata_only, {:rows, 412_000_000, 0}, :cold, 1.0, :warning},
+    {:share_row_exclusive, :metadata_only, {:rows, 10, 8_192}, :cold, 1.0, :info},
     # non-blocking lock, metadata cost: silent
     {:share_update_exclusive, :metadata_only, {:rows, 412_000_000, 0}, :hot, 1.0, :none},
     # non-blocking full scan (CIC, VALIDATE): cost note at scale, info

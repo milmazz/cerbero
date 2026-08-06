@@ -7,13 +7,14 @@ defmodule Cerbero.DDL.Effects do
 
   @doc """
   Every class this module can emit — checked against Locks by the totality test.
-  Excludes :add_primary_key and :set_default which have Locks entries but are not currently
-  emitted by any classification path (reserved for future classifiers).
+  Excludes :set_default, which has a Locks entry but is not currently emitted by
+  any classification path (reserved for a future classifier — no raw-SQL or DSL
+  operation routes to it yet).
   """
   def classes_emitted do
     ~w(create_table create_index create_index_concurrently drop_index drop_index_concurrently
        add_column_constant_default add_column_volatile_default add_column_generated_stored
-       add_unique set_not_null add_check add_check_not_valid validate_check
+       add_primary_key add_unique set_not_null add_check add_check_not_valid validate_check
        add_foreign_key add_foreign_key_not_valid validate_foreign_key alter_column_type
        truncate reindex reindex_concurrently drop_column drop_table rename
        dml_update dml_delete dml_insert_select)a
@@ -155,6 +156,11 @@ defmodule Cerbero.DDL.Effects do
     do: [{:add_unique, [target: t]}]
 
   defp sql_class(%Classified{class: :create_index, table: t}), do: [{:create_index, [target: t]}]
+
+  defp sql_class(%Classified{class: :add_primary_key, table: t}),
+    do: [{:add_primary_key, [target: t]}]
+
+  defp sql_class(%Classified{class: :add_unique, table: t}), do: [{:add_unique, [target: t]}]
 
   defp sql_class(%Classified{class: :drop_index, concurrently: c}),
     do: [{if(c, do: :drop_index_concurrently, else: :drop_index), []}]

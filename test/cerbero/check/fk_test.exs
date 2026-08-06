@@ -99,6 +99,18 @@ defmodule Cerbero.Check.FKTest do
     assert msg =~ "writes to"
   end
 
+  test "create table + add FK to it in the same migration: silent (born-and-not-backfilled)" do
+    assert [] =
+             judge([FKValidationScan], [orgs()], """
+             create table(:events_v2) do
+               add :id, :bigint, primary_key: true
+             end
+             alter table(:events_v2) do
+               add :owner_org_id, references(:orgs)
+             end
+             """)
+  end
+
   test "rule 5 on CRDB: FK add is online schema change, no finding" do
     crdb = %{"engine" => %{"name" => "cockroachdb", "version" => "25.1", "version_num" => 25_100}}
 

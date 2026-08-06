@@ -15,19 +15,36 @@ defmodule Cerbero.Check.FKValidationScan do
     if catalog.engine == :cockroachdb do
       []
     else
-      migration.operations
-      |> Enum.flat_map(&Effects.derive(&1, catalog.engine, catalog.version_num))
-      |> Enum.filter(&(&1.class == :add_foreign_key))
-      |> Enum.flat_map(fn effect ->
-        # Skip FKs with validate: false (add_foreign_key_not_valid) — they don't trigger a scan
-        referencing = Keyword.get(effect.relations, :target)
-        referenced = Keyword.get(effect.relations, :referenced)
-        judge(referencing, referenced, effect.line, migration, catalog, config)
-      end)
+      {findings, _} =
+        Enum.reduce(migration.operations, {[], catalog}, fn op, {findings, current_catalog} ->
+          new_findings =
+            op
+            |> Effects.derive(current_catalog.engine, current_catalog.version_num)
+            |> Enum.filter(&(&1.class == :add_foreign_key))
+            |> Enum.flat_map(fn effect ->
+              # Skip FKs with validate: false (add_foreign_key_not_valid) — they don't trigger a scan
+              referencing = Keyword.get(effect.relations, :target)
+              referenced = Keyword.get(effect.relations, :referenced)
+              judge(referencing, referenced, effect.line, migration, current_catalog, config)
+            end)
+
+          updated_catalog = Catalog.apply(current_catalog, op)
+          {findings ++ new_findings, updated_catalog}
+        end)
+
+      findings
     end
   end
 
   defp judge(referencing, referenced, line, migration, catalog, config) do
+    if Catalog.born?(catalog, referencing) and not Catalog.backfilled?(catalog, referencing) do
+      []
+    else
+      judge_scan(referencing, referenced, line, migration, catalog, config)
+    end
+  end
+
+  defp judge_scan(referencing, referenced, line, migration, catalog, config) do
     scale_ing = Catalog.scale(catalog, referencing)
     scale_ed = if referenced, do: Catalog.scale(catalog, referenced), else: :unknown
     traffic = Catalog.traffic(catalog, referencing, config)

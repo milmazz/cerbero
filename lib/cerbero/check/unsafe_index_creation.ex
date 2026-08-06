@@ -33,7 +33,9 @@ defmodule Cerbero.Check.UnsafeIndexCreation do
   defp judge(op, migration, catalog, config) do
     op
     |> Effects.derive(catalog.engine, catalog.version_num)
-    |> Enum.filter(&(&1.class in [:create_index, :add_unique, :drop_index, :reindex]))
+    |> Enum.filter(
+      &(&1.class in [:create_index, :add_unique, :add_primary_key, :drop_index, :reindex])
+    )
     |> Enum.flat_map(fn effect ->
       table = Keyword.get(effect.relations, :target)
 

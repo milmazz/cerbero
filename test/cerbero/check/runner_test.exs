@@ -91,6 +91,47 @@ defmodule Cerbero.Check.RunnerTest do
     assert [%Finding{severity: :error}] = Enum.filter(findings, &(&1.check == :unclassified_sql))
   end
 
+  test "lock_timeout_attested annotates AEL/lock_timeout findings without changing severity or silencing",
+       %{config: config} do
+    m =
+      parse!(
+        "20260801000000",
+        "alter table(:events) do\n modify :org_id, :bigint, null: false\n end"
+      )
+
+    events =
+      table("events", %{
+        "n_live_tup" => 5_000_000,
+        "reltuples" => 5_000_000.0,
+        "columns" => [column("org_id")]
+      })
+
+    {findings_off, _} =
+      Runner.run([m], catalog([events]), config, [Cerbero.Check.NotNullOnPopulatedTable])
+
+    assert [%Finding{severity: :error, message: msg_off}] = findings_off
+    refute msg_off =~ "lock_timeout attested"
+
+    config_on = %{config | lock_timeout_attested: true}
+
+    {findings_on, _} =
+      Runner.run([m], catalog([events]), config_on, [Cerbero.Check.NotNullOnPopulatedTable])
+
+    assert [%Finding{severity: :error, message: msg_on}] = findings_on
+    assert msg_on == msg_off <> " (lock_timeout attested in .cerbero.exs)"
+  end
+
+  test "lock_timeout_attested leaves findings that don't mention a lock untouched", %{
+    config: config
+  } do
+    config_on = %{config | lock_timeout_attested: true}
+    m = parse!("20260801000000", ~s|execute "CLUSTER events USING idx"|)
+    {findings, _} = Runner.run([m], catalog(), config_on)
+
+    assert [%Finding{message: msg}] = Enum.filter(findings, &(&1.check == :unclassified_sql))
+    refute msg =~ "lock_timeout attested"
+  end
+
   test "helpers: human_rows" do
     assert Cerbero.Check.Helpers.human_rows(412_000_000) == "412M"
     assert Cerbero.Check.Helpers.human_rows(41_000_000) == "41M"

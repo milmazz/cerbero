@@ -29,8 +29,9 @@ defmodule Cerbero.Integration.CRDBTest do
   use ExUnit.Case, async: false
   @moduletag :integration
 
+  alias Cerbero.Catalog
   alias Cerbero.Snapshot
-  alias Cerbero.Snapshot.Exporter
+  alias Cerbero.Snapshot.{Exporter, Staleness}
 
   @url "postgresql://root@localhost:26257/defaultdb?sslmode=disable"
 
@@ -76,6 +77,52 @@ defmodule Cerbero.Integration.CRDBTest do
              Postgrex.query(conn, "ALTER TABLE orgs ALTER COLUMN name TYPE VARCHAR(10)", [])
   end
 
+  test "row scale: n_live_tup is wired from crdb_internal.table_row_statistics, never fabricated to 0",
+       %{conn: conn} do
+    Postgrex.query!(
+      conn,
+      "CREATE TABLE IF NOT EXISTS rowcount_check (id INT8 PRIMARY KEY, v STRING)",
+      []
+    )
+
+    Postgrex.query!(
+      conn,
+      "INSERT INTO rowcount_check (id, v) SELECT g, 'x' FROM generate_series(1, 3000) g " <>
+        "ON CONFLICT (id) DO NOTHING",
+      []
+    )
+
+    # CRDB's estimated_row_count is nil until stats exist for the table
+    # (auto stats collection is async and not guaranteed within a test's
+    # lifetime) — force it, with a short bounded retry: CREATE STATISTICS
+    # itself blocks until complete, but a fresh table's descriptor lease
+    # can lag by one query cycle before crdb_internal.table_row_statistics
+    # reflects it (observed empirically: occasionally 0 immediately after,
+    # always correct within a couple of retries).
+    await_row_stats(conn, "rowcount_check")
+
+    assert {:ok, raw} = Exporter.export(@url)
+    assert {:ok, snapshot} = Snapshot.decode(Snapshot.stamp(raw))
+
+    staleness = %Staleness{age_days: 1, scale_mode: :exact, threshold_multiplier: 1.0}
+    catalog = Catalog.from_snapshot(snapshot, staleness)
+
+    case Catalog.scale(catalog, "rowcount_check") do
+      {:rows, rows, _} ->
+        assert rows > 0
+
+      :unknown ->
+        :ok
+
+      other ->
+        flunk(
+          "expected {:rows, >0, _} or :unknown, never a fabricated zero; got #{inspect(other)}"
+        )
+    end
+
+    refute match?({:rows, 0, _}, Catalog.scale(catalog, "rowcount_check"))
+  end
+
   test "the limitation table's surviving fact: a column a generated column depends on can't change type",
        %{conn: conn} do
     Postgrex.query!(
@@ -86,6 +133,23 @@ defmodule Cerbero.Integration.CRDBTest do
 
     assert {:error, %Postgrex.Error{}} =
              Postgrex.query(conn, "ALTER TABLE orgs_gen ALTER COLUMN x TYPE VARCHAR(20)", [])
+  end
+
+  defp await_row_stats(conn, table, tries \\ 5) do
+    Postgrex.query!(conn, "CREATE STATISTICS cerbero_#{table}_stats FROM #{table}", [])
+
+    result =
+      Postgrex.query!(
+        conn,
+        "SELECT estimated_row_count FROM crdb_internal.table_row_statistics WHERE table_name = $1",
+        [table]
+      )
+
+    case {result.rows, tries} do
+      {[[n]], _} when is_integer(n) and n > 0 -> :ok
+      {_, tries} when tries > 1 -> Process.sleep(200) && await_row_stats(conn, table, tries - 1)
+      _ -> :ok
+    end
   end
 
   # Postgrex.start_link/1 has no :url option — parse it the same way the
