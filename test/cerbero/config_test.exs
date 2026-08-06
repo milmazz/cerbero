@@ -28,12 +28,14 @@ defmodule Cerbero.ConfigTest do
   test "loads overrides from a .cerbero.exs keyword list" do
     path = Path.join(System.tmp_dir!(), ".cerbero.exs")
     File.write!(path, "[rows_error: 5_000_000, lock_timeout_attested: true]")
+    on_exit(fn -> File.rm(path) end)
     assert {:ok, %Config{rows_error: 5_000_000, lock_timeout_attested: true}} = Config.load(path)
   end
 
   test "unknown keys are a bad_config error, not a crash" do
     path = Path.join(System.tmp_dir!(), ".cerbero_bad.exs")
     File.write!(path, "[rows_eror: 5]")
+    on_exit(fn -> File.rm(path) end)
     assert {:error, {:bad_config, msg}} = Config.load(path)
     assert msg =~ "rows_eror"
   end
