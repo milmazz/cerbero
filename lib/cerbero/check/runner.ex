@@ -27,15 +27,28 @@ defmodule Cerbero.Check.Runner do
       Enum.map_reduce(pending, catalog, fn migration, cat ->
         findings =
           checks
-          |> Enum.reject(&(&1.id() in config.skip_checks))
-          |> Enum.flat_map(& &1.run(migration, cat, config))
-          |> Enum.map(&apply_skip(&1, migration))
-          |> Enum.map(&apply_override(&1, config))
+          |> Enum.flat_map(fn check ->
+            check.run(migration, cat, config)
+            |> Enum.map(&{check.id(), &1})
+          end)
+          |> Enum.map(fn {check_module_id, finding} ->
+            finding
+            |> apply_override(config)
+            |> apply_skip(migration)
+            |> apply_config_skip(check_module_id, config)
+          end)
 
         {findings, Catalog.apply_migration(cat, migration)}
       end)
 
     {List.flatten(findings), final_catalog}
+  end
+
+  defp apply_override(%Finding{} = finding, %Config{severity_overrides: overrides}) do
+    case Map.fetch(overrides, finding.check) do
+      {:ok, severity} -> %{finding | severity: severity}
+      :error -> finding
+    end
   end
 
   defp apply_skip(%Finding{} = finding, %Migration{attrs: %{cerbero_skip: skips}}) do
@@ -48,10 +61,11 @@ defmodule Cerbero.Check.Runner do
     end
   end
 
-  defp apply_override(%Finding{} = finding, %Config{severity_overrides: overrides}) do
-    case Map.fetch(overrides, finding.check) do
-      {:ok, severity} -> %{finding | severity: severity}
-      :error -> finding
+  defp apply_config_skip(%Finding{} = finding, check_module_id, %Config{skip_checks: skip_checks}) do
+    if Enum.member?(skip_checks, check_module_id) do
+      %{finding | severity: :info, message: finding.message <> " (skipped via config)"}
+    else
+      finding
     end
   end
 end

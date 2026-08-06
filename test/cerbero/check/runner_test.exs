@@ -97,4 +97,48 @@ defmodule Cerbero.Check.RunnerTest do
     assert Cerbero.Check.Helpers.human_rows(600_000) == "600k"
     assert Cerbero.Check.Helpers.human_rows(97) == "97"
   end
+
+  test "config.skip_checks demotes findings to info without silencing them", %{config: config} do
+    config = %{config | skip_checks: [:meta_findings]}
+    m = parse!("20260801000000", ~s|execute "CLUSTER events USING idx"|)
+    {findings, _} = Runner.run([m], catalog(), config)
+
+    assert [%Finding{check: :unclassified_sql, severity: :info, message: msg}] =
+             Enum.filter(findings, &(&1.check == :unclassified_sql))
+
+    assert msg =~ "(skipped via config)"
+  end
+
+  test "@cerbero_skip wins over severity_overrides, but overrides apply to other migrations",
+       %{config: config} do
+    config = %{config | severity_overrides: %{unclassified_sql: :error}}
+
+    {:ok, m_skipped} =
+      Parser.parse_string("""
+      defmodule M do
+        use Ecto.Migration
+        @cerbero_skip [{:unclassified_sql, "reviewed"}]
+        def change do
+          execute "CLUSTER events USING idx"
+        end
+      end
+      """)
+
+    m_not_skipped = parse!("20260801000001", ~s|execute "CLUSTER events USING idx"|)
+
+    {findings, _} = Runner.run([m_skipped, m_not_skipped], catalog(), config)
+
+    skipped_findings =
+      Enum.filter(findings, &(&1.check == :unclassified_sql and &1.file == "inline.exs"))
+
+    not_skipped_findings =
+      Enum.filter(
+        findings,
+        &(&1.check == :unclassified_sql and &1.file == "20260801000001_m.exs")
+      )
+
+    assert [%Finding{severity: :info, message: msg}] = skipped_findings
+    assert msg =~ "reviewed"
+    assert [%Finding{severity: :error}] = not_skipped_findings
+  end
 end
