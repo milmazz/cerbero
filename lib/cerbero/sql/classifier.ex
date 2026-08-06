@@ -30,7 +30,8 @@ defmodule Cerbero.SQL.Classifier do
               constraint: nil,
               concurrently: false,
               not_valid: false,
-              unique: false
+              unique: false,
+              ref_table: nil
   end
 
   @ident ~S{((?:"[^"]+"|[a-z_][a-z0-9_$]*)(?:\.(?:"[^"]+"|[a-z_][a-z0-9_$]*))?)}
@@ -222,6 +223,19 @@ defmodule Cerbero.SQL.Classifier do
           class: :add_check,
           table: unq(m[1]),
           constraint: unq(m[2]),
+          not_valid: String.ends_with?(n, "not valid")
+        }
+
+      m =
+          run(
+            ~r/^alter table (?:only )?(?:if exists )?#{@ident} add (?:constraint (\S+) )?foreign key (?:\([^)]*\) )?references #{@ident}(?:\([^)]*\))?/,
+            n
+          ) ->
+        %Classified{
+          class: :add_foreign_key,
+          table: unq(m[1]),
+          constraint: unq(m[2]),
+          ref_table: unq(m[3]),
           not_valid: String.ends_with?(n, "not valid")
         }
 

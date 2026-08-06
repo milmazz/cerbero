@@ -79,4 +79,39 @@ defmodule Cerbero.Check.FKTest do
                attrs: " @disable_ddl_transaction true\n @disable_migration_lock true"
              )
   end
+
+  test "raw SQL FK without referenced table (unparseable) does not crash and produces finding" do
+    assert [%Finding{check: :fk_validation_scan, severity: :error}] =
+             judge([FKValidationScan], [big_events_table(), orgs()], """
+             execute \"ALTER TABLE events ADD CONSTRAINT c FOREIGN KEY (org_id) REFERENCES orgs(id)\"
+             """)
+  end
+
+  test "raw SQL FK with parseable referenced table extracts it correctly" do
+    # Note: if the referenced table can be parsed, it should be included in message
+    results =
+      judge([FKValidationScan], [big_events_table(), orgs()], """
+      execute \"ALTER TABLE events ADD CONSTRAINT c FOREIGN KEY (org_id) REFERENCES public.orgs(id)\"
+      """)
+
+    assert [%Finding{check: :fk_validation_scan, severity: :error, message: msg}] = results
+    # When referenced table is known, message should mention it
+    assert msg =~ "writes to"
+  end
+
+  test "rule 5 on CRDB: FK add is online schema change, no finding" do
+    crdb = %{"engine" => %{"name" => "cockroachdb", "version" => "25.1", "version_num" => 25_100}}
+
+    assert [] =
+             judge(
+               [FKValidationScan],
+               [big_events_table(), orgs()],
+               """
+               alter table(:events) do
+                 add :owner_org_id, references(:orgs)
+               end
+               """,
+               snapshot: crdb
+             )
+  end
 end

@@ -168,8 +168,11 @@ defmodule Cerbero.DDL.Effects do
   defp sql_class(%Classified{class: :add_check, not_valid: nv, table: t}),
     do: [{if(nv, do: :add_check_not_valid, else: :add_check), [target: t]}]
 
-  defp sql_class(%Classified{class: :add_foreign_key, not_valid: nv, table: t}),
-    do: [{if(nv, do: :add_foreign_key_not_valid, else: :add_foreign_key), [target: t]}]
+  defp sql_class(%Classified{class: :add_foreign_key, not_valid: nv, table: t, ref_table: ref}),
+    do: [
+      {if(nv, do: :add_foreign_key_not_valid, else: :add_foreign_key),
+       [target: t] ++ if(ref, do: [referenced: ref], else: [])}
+    ]
 
   # VALIDATE CONSTRAINT: FK vs CHECK is resolved by the catalog in rules;
   # here we use the stricter FK profile (SUE on referencing + ROW SHARE on referenced).

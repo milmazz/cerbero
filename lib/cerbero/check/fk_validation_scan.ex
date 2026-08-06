@@ -11,15 +11,20 @@ defmodule Cerbero.Check.FKValidationScan do
 
   @impl true
   def run(migration, catalog, config) do
-    migration.operations
-    |> Enum.flat_map(&Effects.derive(&1, catalog.engine, catalog.version_num))
-    |> Enum.filter(&(&1.class == :add_foreign_key))
-    |> Enum.flat_map(fn effect ->
-      # Skip FKs with validate: false (add_foreign_key_not_valid) — they don't trigger a scan
-      referencing = Keyword.get(effect.relations, :target)
-      referenced = Keyword.get(effect.relations, :referenced)
-      judge(referencing, referenced, effect.line, migration, catalog, config)
-    end)
+    # Skip CRDB: FK adds are online schema changes
+    if catalog.engine == :cockroachdb do
+      []
+    else
+      migration.operations
+      |> Enum.flat_map(&Effects.derive(&1, catalog.engine, catalog.version_num))
+      |> Enum.filter(&(&1.class == :add_foreign_key))
+      |> Enum.flat_map(fn effect ->
+        # Skip FKs with validate: false (add_foreign_key_not_valid) — they don't trigger a scan
+        referencing = Keyword.get(effect.relations, :target)
+        referenced = Keyword.get(effect.relations, :referenced)
+        judge(referencing, referenced, effect.line, migration, catalog, config)
+      end)
+    end
   end
 
   defp judge(referencing, referenced, line, migration, catalog, config) do
@@ -27,8 +32,11 @@ defmodule Cerbero.Check.FKValidationScan do
     scale_ed = if referenced, do: Catalog.scale(catalog, referenced), else: :unknown
     traffic = Catalog.traffic(catalog, referencing, config)
 
+    # When referenced is missing, compute severity from referencing table only
+    scales = if referenced, do: [scale_ing, scale_ed], else: [scale_ing]
+
     severity =
-      [scale_ing, scale_ed]
+      scales
       |> Enum.map(
         &Severity.assess(
           :share_row_exclusive,
@@ -59,13 +67,21 @@ defmodule Cerbero.Check.FKValidationScan do
             "below that, schedule the validation scan for a maintenance window"
         end
 
+      message =
+        if q_ed do
+          "ADD FOREIGN KEY: writes to #{q_ed} (#{Helpers.describe_scale(catalog, referenced)}) are blocked " <>
+            "while #{q_ing} (#{Helpers.describe_scale(catalog, referencing)}) is scanned " <>
+            "(SHARE ROW EXCLUSIVE on both). " <> remediation
+        else
+          "ADD FOREIGN KEY: #{q_ing} (#{Helpers.describe_scale(catalog, referencing)}) is scanned " <>
+            "under SHARE ROW EXCLUSIVE (referenced table unknown). " <> remediation
+        end
+
       [
         Helpers.finding(
           __MODULE__,
           severity,
-          "ADD FOREIGN KEY: writes to #{q_ed} (#{Helpers.describe_scale(catalog, referenced)}) are blocked " <>
-            "while #{q_ing} (#{Helpers.describe_scale(catalog, referencing)}) is scanned " <>
-            "(SHARE ROW EXCLUSIVE on both). " <> remediation,
+          message,
           migration,
           line,
           relations: Enum.reject([q_ing, q_ed], &is_nil/1)
