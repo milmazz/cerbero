@@ -82,6 +82,12 @@ It does not certify migrations as safe; it judges the statement, not the moment.
   code-scanning annotations. Findings map `error`/`warning`/`note` from their
   severities; global snapshot-health findings anchor to the committed snapshot
   file so they still surface in PR review.
+- Multi-repo configuration for umbrella apps: a `repos` config key defines one
+  `{name, migrations_paths, snapshot_path}` entry per Ecto repo. With no flag,
+  `mix cerbero.check` runs every repo and merges findings into one document
+  (worst exit code wins; each repo's global findings anchor to its own
+  snapshot artifact); `--repo NAME` runs one. All other settings stay global,
+  and explicit `--migrations`/`--snapshot` still bypass the repo table.
 - CRDB support for the DBA path: `mix cerbero.snapshot --emit-sql --engine
   cockroachdb` emits a CRDB-branched script (CRDB speaks pgwire and supports
   the same `COPY (SELECT row_to_json(...)) TO STDOUT` mechanism, verified on

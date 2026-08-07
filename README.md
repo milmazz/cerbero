@@ -110,7 +110,8 @@ defaults spelled out and commented):
       precision: :exact,          # :order_of_magnitude buckets exported counts/bytes to powers of ten
       schemas: ["public"],
       snapshot_path: "priv/repo/cerbero_snapshot.json",
-      migrations_paths: ["priv/repo/migrations"]
+      migrations_paths: ["priv/repo/migrations"],
+      repos: []                   # umbrella multi-repo: [[name: "app_a", migrations_paths: [...], snapshot_path: "..."]]; check runs all, or one via --repo NAME
     ]
 
 Per-migration escape hatch (reason required, findings still shown at info):

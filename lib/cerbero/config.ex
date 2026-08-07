@@ -20,7 +20,8 @@ defmodule Cerbero.Config do
             precision: :exact,
             schemas: ["public"],
             migrations_paths: ["priv/repo/migrations"],
-            snapshot_path: "priv/repo/cerbero_snapshot.json"
+            snapshot_path: "priv/repo/cerbero_snapshot.json",
+            repos: []
 
   @type t :: %__MODULE__{}
 
@@ -41,9 +42,58 @@ defmodule Cerbero.Config do
     known = Map.keys(%__MODULE__{}) -- [:__struct__]
 
     case Keyword.keys(opts) -- known do
-      [] -> validate_extra_checks(struct!(__MODULE__, opts))
-      unknown -> {:error, {:bad_config, "unknown config keys: #{inspect(unknown)}"}}
+      [] ->
+        with {:ok, config} <- validate_extra_checks(struct!(__MODULE__, opts)) do
+          validate_repos(config)
+        end
+
+      unknown ->
+        {:error, {:bad_config, "unknown config keys: #{inspect(unknown)}"}}
     end
+  end
+
+  # Multi-repo (umbrella) support: each entry names one Ecto repo's
+  # migrations and snapshot. Normalized to maps at load so downstream code
+  # never re-checks shapes; every other setting stays global.
+  defp validate_repos(%__MODULE__{repos: repos} = config) when is_list(repos) do
+    normalized = Enum.map(repos, &normalize_repo/1)
+
+    cond do
+      Enum.any?(normalized, &match?({:error, _}, &1)) ->
+        {:error, bad} = Enum.find(normalized, &match?({:error, _}, &1))
+        {:error, {:bad_config, "repos: #{bad}"}}
+
+      normalized |> Enum.map(& &1.name) |> Enum.uniq() |> length() != length(normalized) ->
+        {:error, {:bad_config, "repos: duplicate repo names"}}
+
+      true ->
+        {:ok, %{config | repos: normalized}}
+    end
+  end
+
+  defp validate_repos(%__MODULE__{repos: other}) do
+    {:error, {:bad_config, "repos must be a list of entries, got: #{inspect(other)}"}}
+  end
+
+  defp normalize_repo(entry) when is_list(entry) or is_map(entry) do
+    entry = Map.new(entry)
+    name = entry[:name]
+    migrations_paths = entry[:migrations_paths]
+    snapshot_path = entry[:snapshot_path]
+
+    if is_binary(name) and is_list(migrations_paths) and migrations_paths != [] and
+         Enum.all?(migrations_paths, &is_binary/1) and is_binary(snapshot_path) and
+         map_size(entry) == 3 do
+      %{name: name, migrations_paths: migrations_paths, snapshot_path: snapshot_path}
+    else
+      {:error,
+       "each entry needs exactly name (string), migrations_paths (non-empty list of " <>
+         "strings), snapshot_path (string); got: #{inspect(entry)}"}
+    end
+  end
+
+  defp normalize_repo(other) do
+    {:error, "each entry must be a keyword list or map, got: #{inspect(other)}"}
   end
 
   # Registration is validated at load time so a typo'd or non-conforming

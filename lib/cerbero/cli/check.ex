@@ -14,6 +14,7 @@ defmodule Cerbero.CLI.Check do
     format: :string,
     fail_on: :string,
     no_snapshot: :boolean,
+    repo: :string,
     verbose: :boolean
   ]
 
@@ -42,16 +43,120 @@ defmodule Cerbero.CLI.Check do
 
   defp do_run_parsed(parsed, clock) do
     with {:ok, config} <- load_config(parsed),
-         {:ok, migrations} <- parse_migrations(parsed, config),
-         {:ok, fail_on} <- fail_on(parsed, config) do
-      if parsed[:no_snapshot] do
-        structural(parsed, config, migrations, fail_on)
-      else
-        with_snapshot(parsed, config, migrations, fail_on, clock)
+         {:ok, fail_on} <- fail_on(parsed, config),
+         {:ok, mode} <- run_mode(parsed, config) do
+      case mode do
+        {:single, config} -> run_single(parsed, config, fail_on, clock)
+        {:multi, repos, config} -> run_multi(parsed, config, repos, fail_on, clock)
       end
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
       {:error, reason} -> {:error, inspect(reason)}
+    end
+  end
+
+  # Multi-repo (umbrella) dispatch: `repos` in .cerbero.exs defines one
+  # entry per Ecto repo; --repo selects one, no --repo runs them all.
+  # Explicit --migrations/--snapshot keep meaning "exactly this path" and
+  # bypass the repo table entirely.
+  defp run_mode(parsed, config) do
+    case {parsed[:repo], config.repos} do
+      {nil, []} ->
+        {:ok, {:single, config}}
+
+      {nil, repos} ->
+        if parsed[:migrations] || parsed[:snapshot] do
+          {:ok, {:single, config}}
+        else
+          {:ok, {:multi, repos, config}}
+        end
+
+      {name, []} ->
+        {:error, "--repo #{name}: no repos configured in .cerbero.exs"}
+
+      {name, repos} ->
+        case Enum.find(repos, &(&1.name == name)) do
+          nil ->
+            {:error,
+             "unknown repo #{name} (configured: #{Enum.map_join(repos, ", ", & &1.name)})"}
+
+          repo ->
+            {:ok, {:single, apply_repo(config, repo)}}
+        end
+    end
+  end
+
+  defp apply_repo(config, repo) do
+    %{
+      config
+      | migrations_paths: repo.migrations_paths,
+        snapshot_path: repo.snapshot_path,
+        repos: []
+    }
+  end
+
+  defp run_single(parsed, config, fail_on, clock) do
+    with {:ok, migrations} <- parse_migrations(parsed, config),
+         {:ok, result} <- collect(parsed, config, migrations, clock) do
+      render(
+        parsed,
+        result.findings,
+        result.summary_line,
+        result.summary,
+        fail_on,
+        result.snapshot_path
+      )
+    end
+  end
+
+  defp run_multi(parsed, config, repos, fail_on, clock) do
+    results =
+      Enum.reduce_while(repos, {:ok, []}, fn repo, {:ok, acc} ->
+        repo_config = apply_repo(config, repo)
+
+        with {:ok, migrations} <- parse_migrations(parsed, repo_config),
+             {:ok, result} <- collect(parsed, repo_config, migrations, clock) do
+          {:cont, {:ok, [{repo, result} | acc]}}
+        else
+          {:error, reason} -> {:halt, {:error, "repo #{repo.name}: #{reason}"}}
+        end
+      end)
+
+    with {:ok, per_repo} <- results do
+      per_repo = Enum.reverse(per_repo)
+
+      # Global (file-less) findings anchor to their repo's snapshot
+      # artifact before the merge, so merged human/sarif output stays
+      # attributable to a repo instead of floating free.
+      findings =
+        Enum.flat_map(per_repo, fn {_repo, r} ->
+          Enum.map(r.findings, fn f ->
+            if f.file == nil and r.snapshot_path != nil,
+              do: %{f | file: r.snapshot_path},
+              else: f
+          end)
+        end)
+
+      summary_line =
+        Enum.map_join(per_repo, "\n", fn {repo, r} -> "#{repo.name}: #{r.summary_line}" end)
+
+      summary = %{
+        "errors" => count(findings, :error),
+        "warnings" => count(findings, :warning),
+        "infos" => count(findings, :info),
+        "snapshot" => nil,
+        "repos" => Map.new(per_repo, fn {repo, r} -> {repo.name, r.summary["snapshot"]} end)
+      }
+
+      render(parsed, findings, summary_line, summary, fail_on, nil)
+    end
+  end
+
+  defp collect(parsed, config, migrations, clock) do
+    if parsed[:no_snapshot] do
+      structural(config, migrations)
+    else
+      with_snapshot(parsed, config, migrations, clock)
     end
   end
 
@@ -96,7 +201,7 @@ defmodule Cerbero.CLI.Check do
     end
   end
 
-  defp with_snapshot(parsed, config, migrations, fail_on, clock) do
+  defp with_snapshot(parsed, config, migrations, clock) do
     with {:ok, snapshot} <- Snapshot.load(parsed[:snapshot] || config.snapshot_path) do
       staleness = Staleness.assess(snapshot, clock.(), config)
       catalog = Catalog.from_snapshot(snapshot, staleness)
@@ -127,20 +232,19 @@ defmodule Cerbero.CLI.Check do
         }
       }
 
-      render(
-        parsed,
-        findings,
-        summary_line,
-        summary,
-        fail_on,
-        parsed[:snapshot] || config.snapshot_path
-      )
+      {:ok,
+       %{
+         findings: findings,
+         summary_line: summary_line,
+         summary: summary,
+         snapshot_path: parsed[:snapshot] || config.snapshot_path
+       }}
     else
       {:error, reason} -> {:error, "snapshot: #{inspect(reason)}"}
     end
   end
 
-  defp structural(parsed, config, migrations, fail_on) do
+  defp structural(config, migrations) do
     {history, pending} =
       Enum.split_with(migrations, fn m ->
         config.start_after != nil and m.version != nil and m.version <= config.start_after
@@ -164,7 +268,7 @@ defmodule Cerbero.CLI.Check do
       "snapshot" => nil
     }
 
-    render(parsed, findings, summary_line, summary, fail_on, nil)
+    {:ok, %{findings: findings, summary_line: summary_line, summary: summary, snapshot_path: nil}}
   end
 
   defp render(parsed, findings, summary_line, summary, fail_on, snapshot_path) do

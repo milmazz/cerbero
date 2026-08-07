@@ -220,4 +220,86 @@ defmodule Cerbero.CLI.CheckTest do
     assert code in [0, 1]
     assert output =~ "order-of-magnitude precision"
   end
+
+  describe "multi-repo" do
+    @repos_config """
+    [
+      repos: [
+        [
+          name: "app_safe",
+          migrations_paths: ["test/fixtures/migrations/safe"],
+          snapshot_path: "test/fixtures/snapshots/huge_table.json"
+        ],
+        [
+          name: "app_unsafe",
+          migrations_paths: ["test/fixtures/migrations/unsafe"],
+          snapshot_path: "test/fixtures/snapshots/huge_table.json"
+        ]
+      ]
+    ]
+    """
+
+    defp write_repos_config(tmp_dir) do
+      path = Path.join(tmp_dir, ".cerbero.exs")
+      File.write!(path, @repos_config)
+      path
+    end
+
+    @tag :tmp_dir
+    test "no --repo: every repo runs, findings merge, worst exit code wins", %{tmp_dir: tmp_dir} do
+      {code, output} = run(["--config", write_repos_config(tmp_dir)])
+
+      assert code == 1
+      assert output =~ "unsafe_index_creation"
+      assert output =~ "app_safe"
+      assert output =~ "app_unsafe"
+    end
+
+    @tag :tmp_dir
+    test "--repo runs only the named repo", %{tmp_dir: tmp_dir} do
+      config = write_repos_config(tmp_dir)
+
+      {code, output} = run(["--config", config, "--repo", "app_safe"])
+
+      assert code == 0
+      refute output =~ "unsafe_index_creation"
+    end
+
+    @tag :tmp_dir
+    test "--repo with an unknown name is exit 2", %{tmp_dir: tmp_dir} do
+      {code, output} = run(["--config", write_repos_config(tmp_dir), "--repo", "nope"])
+
+      assert code == 2
+      assert output =~ "unknown repo"
+      assert output =~ "app_safe"
+    end
+
+    test "--repo without repos configured is exit 2" do
+      {code, output} = run(["--config", "nonexistent", "--repo", "app_safe"])
+
+      assert code == 2
+      assert output =~ "no repos configured"
+    end
+
+    @tag :tmp_dir
+    test "multi-repo json is one valid document with totals and per-repo snapshots", %{
+      tmp_dir: tmp_dir
+    } do
+      {code, output} = run(["--config", write_repos_config(tmp_dir), "--format", "json"])
+
+      assert code == 1
+      assert %{"summary" => summary} = JSON.decode!(output)
+      assert summary["errors"] >= 1
+      assert %{"app_safe" => _, "app_unsafe" => _} = summary["repos"]
+    end
+
+    @tag :tmp_dir
+    test "multi-repo sarif is one valid document", %{tmp_dir: tmp_dir} do
+      {code, output} = run(["--config", write_repos_config(tmp_dir), "--format", "sarif"])
+
+      assert code == 1
+      assert %{"version" => "2.1.0", "runs" => [run]} = JSON.decode!(output)
+      assert Enum.any?(run["results"], &(&1["ruleId"] == "unsafe_index_creation"))
+    end
+  end
 end

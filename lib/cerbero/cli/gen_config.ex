@@ -69,7 +69,14 @@ defmodule Cerbero.CLI.GenConfig do
 
     # Where migrations live and where the committed snapshot is stored.
     migrations_paths: ["priv/repo/migrations"],
-    snapshot_path: "priv/repo/cerbero_snapshot.json"
+    snapshot_path: "priv/repo/cerbero_snapshot.json",
+
+    # Umbrella apps with several Ecto repos: one entry per repo, e.g.
+    # [name: "app_a", migrations_paths: ["apps/app_a/priv/repo/migrations"],
+    #  snapshot_path: "apps/app_a/priv/repo/cerbero_snapshot.json"].
+    # mix cerbero.check then runs every repo (or one via --repo NAME);
+    # all other settings stay global.
+    repos: []
   ]
   """
 

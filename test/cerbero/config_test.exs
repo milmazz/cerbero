@@ -81,4 +81,41 @@ defmodule Cerbero.ConfigTest do
     assert {:error, {:bad_config, msg}} = Config.load(path)
     assert msg =~ "rows_eror"
   end
+
+  test "repos entries normalize to maps with name, migrations_paths, snapshot_path" do
+    assert {:ok, config} =
+             Config.from_keyword(
+               repos: [
+                 [
+                   name: "app_a",
+                   migrations_paths: ["apps/app_a/priv/repo/migrations"],
+                   snapshot_path: "apps/app_a/priv/repo/cerbero_snapshot.json"
+                 ]
+               ]
+             )
+
+    assert [
+             %{
+               name: "app_a",
+               migrations_paths: ["apps/app_a/priv/repo/migrations"],
+               snapshot_path: "apps/app_a/priv/repo/cerbero_snapshot.json"
+             }
+           ] = config.repos
+  end
+
+  test "a repos entry missing a required key is a bad_config error" do
+    assert {:error, {:bad_config, msg}} = Config.from_keyword(repos: [[name: "app_a"]])
+    assert msg =~ "repos"
+  end
+
+  test "repos that is not a list is a bad_config error" do
+    assert {:error, {:bad_config, msg}} = Config.from_keyword(repos: %{name: "app_a"})
+    assert msg =~ "repos"
+  end
+
+  test "duplicate repo names are a bad_config error" do
+    entry = [name: "a", migrations_paths: ["m"], snapshot_path: "s.json"]
+    assert {:error, {:bad_config, msg}} = Config.from_keyword(repos: [entry, entry])
+    assert msg =~ "duplicate"
+  end
 end
