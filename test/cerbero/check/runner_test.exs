@@ -1,3 +1,22 @@
+defmodule Cerbero.Check.RunnerTest.EchoCheck do
+  @behaviour Cerbero.Check
+
+  @impl true
+  def id, do: :echo_check
+
+  @impl true
+  def run(migration, _catalog, _config) do
+    [
+      %Cerbero.Finding{
+        check: :echo_check,
+        severity: :warning,
+        message: "echo finding",
+        file: migration.file
+      }
+    ]
+  end
+end
+
 defmodule Cerbero.Check.RunnerTest do
   use ExUnit.Case, async: true
 
@@ -130,6 +149,42 @@ defmodule Cerbero.Check.RunnerTest do
 
     assert [%Finding{message: msg}] = Enum.filter(findings, &(&1.check == :unclassified_sql))
     refute msg =~ "lock_timeout attested"
+  end
+
+  test "extra_checks from config run alongside the default checks", %{config: config} do
+    config = %{config | extra_checks: [Cerbero.Check.RunnerTest.EchoCheck]}
+    m = parse!("20260801000000", "create table(:events_v2) do\n add :x, :bigint\n end")
+
+    {findings, _} = Runner.run([m], catalog(), config)
+
+    assert Enum.any?(findings, &(&1.check == :echo_check and &1.severity == :warning))
+  end
+
+  test "runner machinery (skip_checks demotion) applies to registered third-party checks", %{
+    config: config
+  } do
+    config = %{
+      config
+      | extra_checks: [Cerbero.Check.RunnerTest.EchoCheck],
+        skip_checks: [:echo_check]
+    }
+
+    m = parse!("20260801000000", "create table(:events_v2) do\n add :x, :bigint\n end")
+    {findings, _} = Runner.run([m], catalog(), config)
+
+    assert [%Finding{check: :echo_check, severity: :info, message: msg}] =
+             Enum.filter(findings, &(&1.check == :echo_check))
+
+    assert msg =~ "(skipped via config)"
+  end
+
+  test "a builtin listed in extra_checks does not run twice", %{config: config} do
+    config = %{config | extra_checks: [Cerbero.Check.MetaFindings]}
+    m = parse!("20260801000000", ~s|execute "CLUSTER events USING idx"|)
+
+    {findings, _} = Runner.run([m], catalog(), config)
+
+    assert [_] = Enum.filter(findings, &(&1.check == :unclassified_sql))
   end
 
   test "helpers: human_rows" do

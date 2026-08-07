@@ -61,6 +61,12 @@ It does not certify migrations as safe; it judges the statement, not the moment.
   still shown) and configuration via `.cerbero.exs` (thresholds, headroom,
   staleness ages, severity overrides, `strict_concurrent_index`,
   `lock_timeout_attested`, schemas, paths).
+- Third-party check registration: the `extra_checks` config key registers
+  modules implementing the public `Cerbero.Check` behaviour into the
+  runner (validated at config load; additive only — built-ins are never
+  displaced, and a built-in listed there is not run twice). Registered
+  checks get `skip_checks`, `severity_overrides`, and `@cerbero_skip`
+  handling like any built-in.
 - Aged-pending grace window tied to deploy cadence: the `deploy_cadence`
   config key (days, default 1) keeps the snapshot-health heuristic from
   flagging every pending migration merely older than a nightly-refreshed

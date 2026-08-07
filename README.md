@@ -103,6 +103,7 @@ CockroachDB only — no adapter behaviour in v1.
       strict_concurrent_index: false,
       lock_timeout_attested: false,
       skip_checks: [],
+      extra_checks: [],          # third-party modules implementing Cerbero.Check, run after the built-ins
       severity_overrides: %{},    # e.g. %{snapshot_health: :error}
       start_after: nil,
       precision: :exact,          # :order_of_magnitude buckets exported counts/bytes to powers of ten

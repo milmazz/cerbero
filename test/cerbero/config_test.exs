@@ -1,3 +1,13 @@
+defmodule Cerbero.ConfigTest.NoopCheck do
+  @behaviour Cerbero.Check
+
+  @impl true
+  def id, do: :noop_check
+
+  @impl true
+  def run(_migration, _catalog, _config), do: []
+end
+
 defmodule Cerbero.ConfigTest do
   use ExUnit.Case, async: true
 
@@ -19,6 +29,7 @@ defmodule Cerbero.ConfigTest do
     assert c.lock_timeout_attested == false
     assert c.strict_concurrent_index == false
     assert c.start_after == nil
+    assert c.extra_checks == []
     assert c.precision == :exact
     assert c.schemas == ["public"]
     assert c.migrations_paths == ["priv/repo/migrations"]
@@ -30,6 +41,33 @@ defmodule Cerbero.ConfigTest do
     File.write!(path, "[rows_error: 5_000_000, lock_timeout_attested: true]")
     on_exit(fn -> File.rm(path) end)
     assert {:ok, %Config{rows_error: 5_000_000, lock_timeout_attested: true}} = Config.load(path)
+  end
+
+  test "extra_checks accepts modules implementing the Cerbero.Check behaviour" do
+    path = Path.join(System.tmp_dir!(), ".cerbero_extra.exs")
+    File.write!(path, "[extra_checks: [Cerbero.ConfigTest.NoopCheck]]")
+    on_exit(fn -> File.rm(path) end)
+
+    assert {:ok, %Config{extra_checks: [Cerbero.ConfigTest.NoopCheck]}} = Config.load(path)
+  end
+
+  test "extra_checks entry not implementing the behaviour is a bad_config error" do
+    path = Path.join(System.tmp_dir!(), ".cerbero_extra_bad.exs")
+    File.write!(path, "[extra_checks: [String]]")
+    on_exit(fn -> File.rm(path) end)
+
+    assert {:error, {:bad_config, msg}} = Config.load(path)
+    assert msg =~ "String"
+    assert msg =~ "Cerbero.Check"
+  end
+
+  test "extra_checks that is not a list is a bad_config error" do
+    path = Path.join(System.tmp_dir!(), ".cerbero_extra_nonlist.exs")
+    File.write!(path, "[extra_checks: Cerbero.ConfigTest.NoopCheck]")
+    on_exit(fn -> File.rm(path) end)
+
+    assert {:error, {:bad_config, msg}} = Config.load(path)
+    assert msg =~ "list"
   end
 
   test "unknown keys are a bad_config error, not a crash" do

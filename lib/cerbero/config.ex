@@ -12,6 +12,7 @@ defmodule Cerbero.Config do
             stale_degrade_days: 90,
             fail_on: :error,
             skip_checks: [],
+            extra_checks: [],
             severity_overrides: %{},
             lock_timeout_attested: false,
             strict_concurrent_index: false,
@@ -40,8 +41,34 @@ defmodule Cerbero.Config do
     known = Map.keys(%__MODULE__{}) -- [:__struct__]
 
     case Keyword.keys(opts) -- known do
-      [] -> {:ok, struct!(__MODULE__, opts)}
+      [] -> validate_extra_checks(struct!(__MODULE__, opts))
       unknown -> {:error, {:bad_config, "unknown config keys: #{inspect(unknown)}"}}
     end
   end
+
+  # Registration is validated at load time so a typo'd or non-conforming
+  # module is exit 2 with a named culprit, not a crash mid-run.
+  defp validate_extra_checks(%__MODULE__{extra_checks: checks} = config) when is_list(checks) do
+    case Enum.reject(checks, &implements_check?/1) do
+      [] ->
+        {:ok, config}
+
+      bad ->
+        {:error,
+         {:bad_config,
+          "extra_checks entries must be modules implementing the Cerbero.Check " <>
+            "behaviour (id/0 and run/3): #{inspect(bad)}"}}
+    end
+  end
+
+  defp validate_extra_checks(%__MODULE__{extra_checks: other}) do
+    {:error, {:bad_config, "extra_checks must be a list of modules, got: #{inspect(other)}"}}
+  end
+
+  defp implements_check?(module) when is_atom(module) do
+    Code.ensure_loaded?(module) and function_exported?(module, :id, 0) and
+      function_exported?(module, :run, 3)
+  end
+
+  defp implements_check?(_other), do: false
 end
