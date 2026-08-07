@@ -211,6 +211,27 @@ defmodule Cerbero.Snapshot.Exporter.Queries do
   def crdb_row_counts,
     do: "SELECT table_name, estimated_row_count FROM crdb_internal.table_row_statistics"
 
+  # CRDB's analyze-timestamp equivalent (roadmap item 10): statistics
+  # creation times from system.table_statistics (what SHOW STATISTICS FOR
+  # TABLE reads), split manual vs automatic — CRDB names its automatic
+  # collections '__auto__', so the manual max maps to last_analyze and the
+  # auto max to last_autoanalyze. Reading system.* may be denied to
+  # non-admin roles; the exporter degrades to no timestamps (honest nil)
+  # rather than failing the export.
+  def crdb_stats_times,
+    do: """
+    SELECT t.schema_name,
+           t.name,
+           max(CASE WHEN s.name <> '__auto__' THEN s."createdAt" END) AS manual_created,
+           max(CASE WHEN s.name = '__auto__' THEN s."createdAt" END) AS auto_created
+    FROM system.table_statistics s
+    JOIN crdb_internal.tables t ON t.table_id = s."tableID"
+    WHERE t.database_name = current_database()
+      AND t.state = 'PUBLIC'
+      AND t.schema_name = ANY($1)
+    GROUP BY 1, 2
+    """
+
   @doc "All (name, sql) pairs the --emit-sql script includes, in order."
   def emit_list do
     [

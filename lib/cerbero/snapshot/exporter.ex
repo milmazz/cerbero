@@ -69,6 +69,7 @@ defmodule Cerbero.Snapshot.Exporter do
     indexes = rows(q!(conn, Queries.indexes(engine["name"]), [schemas]))
     constraints = rows(q!(conn, Queries.constraints(), [schemas]))
     crdb_row_counts = crdb_row_counts(conn, engine["name"])
+    crdb_stats_times = crdb_stats_times(conn, engine["name"], schemas)
 
     applied =
       case q(conn, Queries.applied_migrations(quote_ident(migration_source))) do
@@ -99,7 +100,8 @@ defmodule Cerbero.Snapshot.Exporter do
        "standby" => standby,
        "stats_provenance" => if(standby, do: "standby", else: "primary"),
        "stats_reset" => stats_reset && DateTime.to_iso8601(stats_reset),
-       "tables" => assemble_tables(tables, columns, indexes, constraints, crdb_row_counts)
+       "tables" =>
+         assemble_tables(tables, columns, indexes, constraints, crdb_row_counts, crdb_stats_times)
      }}
   end
 
@@ -142,6 +144,28 @@ defmodule Cerbero.Snapshot.Exporter do
 
   defp crdb_row_counts(_conn, _postgres), do: %{}
 
+  # CRDB analyze-timestamp equivalent (roadmap item 10): statistics
+  # creation times keyed by {schema, name} — manual CREATE STATISTICS maps
+  # to last_analyze, CRDB's automatic '__auto__' collections to
+  # last_autoanalyze (see Queries.crdb_stats_times/0). system.* may be
+  # unreadable for non-admin roles: degrade to no timestamps (honest nil,
+  # same shape as PG's never-analyzed), never fail the export over it.
+  defp crdb_stats_times(conn, "cockroachdb", schemas) do
+    case q(conn, Queries.crdb_stats_times(), [schemas]) do
+      {:ok, result} ->
+        result
+        |> rows()
+        |> Map.new(fn [schema, name, manual, auto] ->
+          {{schema, name}, {manual, auto}}
+        end)
+
+      {:error, _} ->
+        %{}
+    end
+  end
+
+  defp crdb_stats_times(_conn, _postgres, _schemas), do: %{}
+
   defp detect_engine(conn) do
     [[probe]] = rows(q!(conn, Queries.crdb_probe()))
 
@@ -174,7 +198,14 @@ defmodule Cerbero.Snapshot.Exporter do
     end
   end
 
-  defp assemble_tables(tables, columns, indexes, constraints, crdb_row_counts \\ %{}) do
+  defp assemble_tables(
+         tables,
+         columns,
+         indexes,
+         constraints,
+         crdb_row_counts \\ %{},
+         crdb_stats_times \\ %{}
+       ) do
     col_by = Enum.group_by(columns, fn [schema, table | _] -> {schema, table} end)
     idx_by = Enum.group_by(indexes, fn [schema, table | _] -> {schema, table} end)
     con_by = Enum.group_by(constraints, fn [schema, table | _] -> {schema, table} end)
@@ -215,8 +246,12 @@ defmodule Cerbero.Snapshot.Exporter do
         # coerce a true "the engine gave no signal" into 0 — Catalog.scale
         # treats nil/nil as :unknown, not zero (see Catalog.row_estimate).
         "n_live_tup" => n_live_tup || Map.get(crdb_row_counts, name),
-        "last_analyze" => iso(last_analyze),
-        "last_autoanalyze" => iso(last_autoanalyze),
+        # PG fills these from pg_stat_user_tables; CRDB's shim leaves them
+        # NULL, so fall back to statistics creation times (manual -> analyze,
+        # '__auto__' -> autoanalyze). nil stays nil on both engines.
+        "last_analyze" => iso(last_analyze || crdb_stat_time(crdb_stats_times, schema, name, 0)),
+        "last_autoanalyze" =>
+          iso(last_autoanalyze || crdb_stat_time(crdb_stats_times, schema, name, 1)),
         "seq_scan" => seq_scan || 0,
         "idx_scan" => idx_scan || 0,
         "n_tup_ins" => n_tup_ins || 0,
@@ -307,6 +342,13 @@ defmodule Cerbero.Snapshot.Exporter do
       "on_update" => if(type == "foreign_key", do: on_update),
       "is_not_null_check_on" => is_nn
     }
+  end
+
+  defp crdb_stat_time(crdb_stats_times, schema, name, index) do
+    case Map.get(crdb_stats_times, {schema, name}) do
+      nil -> nil
+      pair -> elem(pair, index)
+    end
   end
 
   defp iso(nil), do: nil

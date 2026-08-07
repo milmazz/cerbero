@@ -128,6 +128,36 @@ defmodule Cerbero.Integration.CRDBTest do
     refute match?({:rows, 0, _}, Catalog.scale(catalog, "rowcount_check"))
   end
 
+  test "stats timestamps: statistics creation times land in last_analyze/last_autoanalyze",
+       %{conn: conn} do
+    Postgrex.query!(conn, "DROP TABLE IF EXISTS statsage_check", [])
+    Postgrex.query!(conn, "CREATE TABLE statsage_check (id INT8 PRIMARY KEY, v STRING)", [])
+
+    Postgrex.query!(
+      conn,
+      "INSERT INTO statsage_check (id, v) SELECT g, 'x' FROM generate_series(1, 100) g",
+      []
+    )
+
+    # Unlike estimated_row_count (which lags, see the test above), the
+    # statistics row itself is visible in system.table_statistics as soon
+    # as the statement commits — confirmed empirically on v25.1.
+    Postgrex.query!(
+      conn,
+      "CREATE STATISTICS cerbero_statsage_stats FROM statsage_check",
+      []
+    )
+
+    assert {:ok, raw} = Exporter.export(@url)
+    assert {:ok, snapshot} = Snapshot.decode(Snapshot.stamp(raw))
+    t = Enum.find(snapshot.tables, &(&1.name == "statsage_check"))
+
+    # Manually named statistics land in last_analyze; CRDB's automatic
+    # collection (statistics named __auto__) lands in last_autoanalyze
+    # and may or may not have fired for a table this young.
+    assert %DateTime{} = t.last_analyze
+  end
+
   test "the limitation table's surviving fact: a column a generated column depends on can't change type",
        %{conn: conn} do
     Postgrex.query!(

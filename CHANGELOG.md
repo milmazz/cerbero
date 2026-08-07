@@ -82,6 +82,12 @@ It does not certify migrations as safe; it judges the statement, not the moment.
   code-scanning annotations. Findings map `error`/`warning`/`note` from their
   severities; global snapshot-health findings anchor to the committed snapshot
   file so they still surface in PR review.
+- CRDB analyze-timestamp equivalent: the exporter now fills
+  `last_analyze`/`last_autoanalyze` for CockroachDB tables from statistics
+  creation times (`system.table_statistics`, what `SHOW STATISTICS` reads) —
+  manual `CREATE STATISTICS` maps to analyze, automatic `__auto__`
+  collections to autoanalyze — so CRDB findings carry stats dates like PG
+  findings do. Degrades to honest `nil` when `system.*` is not readable.
 - Per-table stats-age `snapshot_health` finding: an error-tier table targeted
   by the pending set whose statistics were already older than
   `stale_warn_days` at export (or never analyzed) now gets an explicit
