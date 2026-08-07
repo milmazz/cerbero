@@ -50,11 +50,16 @@ It does not certify migrations as safe; it judges the statement, not the moment.
   still shown) and configuration via `.cerbero.exs` (thresholds, headroom,
   staleness ages, severity overrides, `strict_concurrent_index`,
   `lock_timeout_attested`, schemas, paths).
+- Opt-in `precision: :order_of_magnitude` export mode (config or
+  `mix cerbero.snapshot --precision`): buckets every exported count and byte
+  to its power-of-ten floor so committed snapshots do not reveal exact
+  business metrics; the default row tiers are powers of ten, so verdicts
+  survive. Introduces snapshot format v2 (adds the `precision` field; v1
+  snapshots remain fully readable) and the check summary line notes the
+  reduced precision.
 
 ### Known limitations
 
-- `precision: :order_of_magnitude` is reserved in configuration but bucketing
-  is not yet implemented.
 - `down` migration bodies are not judged.
 - Raw-SQL `RENAME`, `ATTACH/DETACH PARTITION`, and `SET LOGGED/UNLOGGED`
   forms have no classifier patterns yet and surface as `unclassified_sql`

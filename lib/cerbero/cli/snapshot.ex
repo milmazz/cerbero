@@ -1,13 +1,15 @@
 defmodule Cerbero.CLI.Snapshot do
   @moduledoc """
   argv for mix cerbero.snapshot: --url | --emit-sql | --from-file, --out,
-  --config, --migration-source.
+  --config, --migration-source, --precision.
 
   Loads `.cerbero.exs` (or the path given via `--config`) the same way
   `mix cerbero.check` does, so `config.schemas` governs which schemas the
   exporter reads instead of the connection always being hardcoded to
-  `["public"]`. A bad config is an operational error (exit 2), same
-  category as an unreachable database.
+  `["public"]`, and `config.precision` selects the export mode
+  (`--precision exact|order_of_magnitude` overrides it). A bad config or an
+  invalid precision is an operational error (exit 2), same category as an
+  unreachable database.
   """
 
   alias Cerbero.{Config, Snapshot}
@@ -19,7 +21,8 @@ defmodule Cerbero.CLI.Snapshot do
     config: :string,
     emit_sql: :boolean,
     from_file: :string,
-    migration_source: :string
+    migration_source: :string,
+    precision: :string
   ]
 
   @spec run([String.t()], keyword()) :: 0 | 2
@@ -29,25 +32,37 @@ defmodule Cerbero.CLI.Snapshot do
     {parsed, _, _} = OptionParser.parse(argv, strict: @switches)
     out = parsed[:out] || "priv/repo/cerbero_snapshot.json"
 
-    case Config.load(parsed[:config] || ".cerbero.exs") do
-      {:ok, config} -> do_run(parsed, config, out, clock, io)
+    with {:ok, config} <- Config.load(parsed[:config] || ".cerbero.exs"),
+         {:ok, precision} <- precision(parsed, config) do
+      do_run(parsed, config, precision, out, clock, io)
+    else
       {:error, reason} -> error(io, reason)
     end
   end
 
-  defp do_run(parsed, config, out, clock, io) do
+  defp precision(parsed, config) do
+    case parsed[:precision] do
+      nil -> {:ok, config.precision}
+      "exact" -> {:ok, :exact}
+      "order_of_magnitude" -> {:ok, :order_of_magnitude}
+      other -> {:error, "invalid --precision: #{other} (exact | order_of_magnitude)"}
+    end
+  end
+
+  defp do_run(parsed, config, precision, out, clock, io) do
     result =
       cond do
         parsed[:emit_sql] ->
           {:emit, Exporter.emit_sql()}
 
         parsed[:from_file] ->
-          Exporter.from_file(parsed[:from_file], clock: clock)
+          Exporter.from_file(parsed[:from_file], clock: clock, precision: precision)
 
         parsed[:url] ->
           Exporter.export(parsed[:url],
             clock: clock,
             schemas: config.schemas,
+            precision: precision,
             migration_source: parsed[:migration_source] || "schema_migrations"
           )
 

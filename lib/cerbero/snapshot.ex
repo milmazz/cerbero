@@ -19,7 +19,8 @@ defmodule Cerbero.Snapshot do
     :stats_reset,
     :applied_migrations,
     :tables,
-    :raw
+    :raw,
+    precision: :exact
   ]
 
   @type t :: %__MODULE__{}
@@ -50,7 +51,11 @@ defmodule Cerbero.Snapshot do
     @type t :: %__MODULE__{}
   end
 
-  @format_version 1
+  # v2 adds the optional top-level "precision" field ("exact" |
+  # "order_of_magnitude") — required to interpret count/byte fields honestly
+  # when the order-of-magnitude export mode is used. v1 snapshots (no
+  # precision field) remain fully supported and default to :exact.
+  @format_version 2
   @min_supported 1
 
   def format_version, do: @format_version
@@ -112,7 +117,7 @@ defmodule Cerbero.Snapshot do
 
   # Typed strict decode
 
-  @top_fields ~w(applied_migrations cerbero_version checksum collected_at database engine format_version standby stats_provenance stats_reset tables)
+  @top_fields ~w(applied_migrations cerbero_version checksum collected_at database engine format_version precision standby stats_provenance stats_reset tables)
   @engine_fields ~w(name version version_num)
   @table_fields ~w(columns constraints heap_bytes idx_scan indexes last_analyze last_autoanalyze n_live_tup n_tup_del n_tup_ins n_tup_upd name partition_of partitioned relpages reltuples schema seq_scan total_bytes)
   @column_fields ~w(default generated identity name not_null type)
@@ -133,6 +138,7 @@ defmodule Cerbero.Snapshot do
   }
   @default_kinds %{"sequence" => :sequence, "expression" => :expression, "literal" => :literal}
   @key_kinds %{"column" => :column, "expression" => :expression}
+  @precisions %{"exact" => :exact, "order_of_magnitude" => :order_of_magnitude}
 
   @spec decode(map()) :: {:ok, %__MODULE__{}} | {:error, term()}
   def decode(raw) do
@@ -142,6 +148,8 @@ defmodule Cerbero.Snapshot do
          {:ok, provenance} <- enum(raw["stats_provenance"], @provenance, "$.stats_provenance"),
          {:ok, collected_at} <- datetime(raw["collected_at"], "$.collected_at"),
          {:ok, stats_reset} <- optional_datetime(raw["stats_reset"], "$.stats_reset"),
+         {:ok, precision} <-
+           enum(Map.get(raw, "precision", "exact"), @precisions, "$.precision"),
          {:ok, tables} <- decode_tables(raw["tables"]) do
       {:ok,
        %__MODULE__{
@@ -159,7 +167,8 @@ defmodule Cerbero.Snapshot do
          stats_reset: stats_reset,
          applied_migrations: raw["applied_migrations"],
          tables: tables,
-         raw: raw
+         raw: raw,
+         precision: precision
        }}
     end
   end

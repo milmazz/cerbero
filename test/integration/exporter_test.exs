@@ -105,6 +105,38 @@ defmodule Cerbero.Integration.ExporterTest do
     refute source =~ ~r/\b(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|TRUNCATE|GRANT)\b/
   end
 
+  test "precision: :order_of_magnitude exports only power-of-ten counts and bytes" do
+    assert {:ok, raw} = Exporter.export(@url, precision: :order_of_magnitude)
+    assert raw["precision"] == "order_of_magnitude"
+
+    power_of_ten? = fn
+      nil -> true
+      n when n <= 0 -> true
+      n when is_integer(n) -> n == Integer.pow(10, floor(:math.log10(n)))
+      f when is_float(f) -> f == :math.pow(10, floor(:math.log10(f)))
+    end
+
+    for t <- raw["tables"] do
+      for field <- ~w(reltuples relpages n_live_tup seq_scan idx_scan
+                      n_tup_ins n_tup_upd n_tup_del heap_bytes total_bytes) do
+        assert power_of_ten?.(t[field]),
+               "#{t["name"]}.#{field} = #{inspect(t[field])} is not a power-of-ten bucket"
+      end
+
+      for idx <- t["indexes"] do
+        assert power_of_ten?.(idx["bytes"])
+      end
+    end
+
+    # the orgs seed has 100 rows exactly; bucketed export must not reveal more
+    orgs = Enum.find(raw["tables"], &(&1["name"] == "orgs"))
+    assert orgs["n_live_tup"] in [100, nil]
+
+    # and it still strict-decodes as a v2 order-of-magnitude snapshot
+    assert {:ok, %Snapshot{precision: :order_of_magnitude, format_version: 2}} =
+             raw |> Snapshot.stamp() |> Snapshot.decode()
+  end
+
   @activity_counters ~w(seq_scan idx_scan n_tup_ins n_tup_upd n_tup_del)
 
   defp normalize(raw) do

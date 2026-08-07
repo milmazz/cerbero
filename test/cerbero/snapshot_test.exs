@@ -119,13 +119,41 @@ defmodule Cerbero.SnapshotTest do
     end
 
     test "refuses a newer format_version, telling the user to upgrade" do
-      assert {:error, {:format_too_new, 2, "upgrade cerbero"}} =
-               reload_with(&Map.put(&1, "format_version", 2))
+      assert {:error, {:format_too_new, 3, "upgrade cerbero"}} =
+               reload_with(&Map.put(&1, "format_version", 3))
+    end
+
+    test "still accepts the v1 format (no precision field)" do
+      assert {:ok, %Cerbero.Snapshot{format_version: 1, precision: :exact}} =
+               reload_with(& &1)
     end
 
     test "refuses an older-than-supported format_version, telling the user to re-export" do
       assert {:error, {:format_too_old, 0, "re-export the snapshot"}} =
                reload_with(&Map.put(&1, "format_version", 0))
+    end
+  end
+
+  describe "v2 precision field" do
+    test "decodes precision as a closed enum, defaulting to :exact when absent" do
+      raw = Cerbero.Test.SnapshotBuilder.build(%{"format_version" => 2})
+      assert {:ok, %Cerbero.Snapshot{precision: :exact}} = Cerbero.Snapshot.decode(raw)
+
+      bucketed =
+        Cerbero.Test.SnapshotBuilder.build(%{
+          "format_version" => 2,
+          "precision" => "order_of_magnitude"
+        })
+
+      assert {:ok, %Cerbero.Snapshot{precision: :order_of_magnitude}} =
+               Cerbero.Snapshot.decode(bucketed)
+    end
+
+    test "rejects out-of-enum precision values" do
+      raw =
+        Cerbero.Test.SnapshotBuilder.build(%{"format_version" => 2, "precision" => "fuzzy"})
+
+      assert {:error, {:invalid_value, "$.precision", "fuzzy"}} = Cerbero.Snapshot.decode(raw)
     end
   end
 end

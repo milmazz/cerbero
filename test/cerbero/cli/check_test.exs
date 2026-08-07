@@ -156,4 +156,23 @@ defmodule Cerbero.CLI.CheckTest do
 
     assert code == 0
   end
+
+  test "an order-of-magnitude snapshot annotates the summary line" do
+    raw =
+      Cerbero.Test.SnapshotBuilder.build(%{
+        "format_version" => 2,
+        "precision" => "order_of_magnitude",
+        "collected_at" => "2026-07-01T00:00:00Z"
+      })
+
+    path = Path.join(System.tmp_dir!(), "bucketed_snapshot.json")
+    Cerbero.Snapshot.write!(raw, path)
+    on_exit(fn -> File.rm(path) end)
+
+    {code, output} =
+      run(["--snapshot", path, "--migrations", @migrations, "--config", "nonexistent"])
+
+    assert code in [0, 1]
+    assert output =~ "order-of-magnitude precision"
+  end
 end

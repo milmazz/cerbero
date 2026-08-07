@@ -43,6 +43,13 @@ defmodule Cerbero.CLI.SnapshotTest do
     assert output =~ "one of --url, --emit-sql, --from-file is required"
   end
 
+  test "an invalid --precision value is exit 2, before attempting any export" do
+    {code, output} = run(["--precision", "fuzzy", "--url", "postgres://unreachable/db"])
+
+    assert code == 2
+    assert output =~ "invalid --precision"
+  end
+
   @tag :postgres
   test "config.schemas is threaded through to the exporter, not hardcoded to public" do
     connect_opts =

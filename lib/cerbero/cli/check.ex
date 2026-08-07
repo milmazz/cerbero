@@ -110,7 +110,11 @@ defmodule Cerbero.CLI.Check do
 
       summary_line =
         "judged against snapshot of #{snapshot.database}, " <>
-          "#{DateTime.to_date(snapshot.collected_at)}, #{staleness.age_days} days old"
+          "#{DateTime.to_date(snapshot.collected_at)}, #{staleness.age_days} days old" <>
+          if(snapshot.precision == :order_of_magnitude,
+            do: " (order-of-magnitude precision)",
+            else: ""
+          )
 
       summary = %{
         "errors" => count(findings, :error),

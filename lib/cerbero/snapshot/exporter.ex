@@ -12,6 +12,7 @@ defmodule Cerbero.Snapshot.Exporter do
   never a fabricated zero.
   """
 
+  alias Cerbero.Snapshot.Bucketing
   alias Cerbero.Snapshot.Exporter.Queries
 
   @cerbero_version Mix.Project.config()[:version]
@@ -21,6 +22,7 @@ defmodule Cerbero.Snapshot.Exporter do
     clock = Keyword.get(opts, :clock, &DateTime.utc_now/0)
     schemas = Keyword.get(opts, :schemas, ["public"])
     migration_source = Keyword.get(opts, :migration_source, "schema_migrations")
+    precision = Keyword.get(opts, :precision, :exact)
 
     # Postgrex.start_link/1 has no :url option of its own (that's an
     # Ecto.Repo convenience) — parse it into the discrete opts (:hostname,
@@ -35,7 +37,10 @@ defmodule Cerbero.Snapshot.Exporter do
       try do
         q!(conn, "SET default_transaction_read_only = on")
         q!(conn, "SET statement_timeout = '15s'")
-        build(conn, clock, schemas, migration_source)
+
+        with {:ok, raw} <- build(conn, clock, schemas, migration_source) do
+          {:ok, Bucketing.finalize(raw, precision)}
+        end
       rescue
         e -> {:error, {:export_failed, Exception.message(e)}}
       after
@@ -323,10 +328,11 @@ defmodule Cerbero.Snapshot.Exporter do
   @spec from_file(Path.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def from_file(path, opts \\ []) do
     clock = Keyword.get(opts, :clock, &DateTime.utc_now/0)
+    precision = Keyword.get(opts, :precision, :exact)
 
-    with {:ok, contents} <- File.read(path) do
-      sections = parse_sections(contents)
-      build_from_sections(sections, clock)
+    with {:ok, contents} <- File.read(path),
+         {:ok, raw} <- build_from_sections(parse_sections(contents), clock) do
+      {:ok, Bucketing.finalize(raw, precision)}
     end
   end
 

@@ -40,10 +40,16 @@ ingests the result.
 What is *not* claimed: table/column names are exported (they already appear in
 your migration files); row counts and byte sizes are business metrics and will
 be visible to everyone with repo access, forever — opt into
-`precision: :order_of_magnitude` to bucket them (planned; the config key is
-reserved, bucketing lands with the exporter follow-up). A hot-standby snapshot
-has degraded traffic stats (recorded and warned); a scrubbed subset copy
-produces confidently wrong scale and is incompatible with scale judgment.
+`precision: :order_of_magnitude` (in `.cerbero.exs`, or
+`mix cerbero.snapshot --precision order_of_magnitude`) to bucket every count
+and byte to its power-of-ten floor: a 4.1M-row `subscriptions` table exports
+as `1_000_000`, and findings read "~1M rows". The default severity tiers
+(100k/1M rows) are powers of ten, so verdicts survive bucketing; the byte tier
+defaults to 1 GiB, so teams using this mode should prefer a power-of-ten
+`bytes_error`. The snapshot records its own precision and the check summary
+line says so. A hot-standby snapshot has degraded traffic stats (recorded and
+warned); a scrubbed subset copy produces confidently wrong scale and is
+incompatible with scale judgment.
 
 The checksum detects corruption and hand-edits. It is not tamper-proofing:
 anyone who can commit can regenerate it.
@@ -98,7 +104,7 @@ CockroachDB only — no adapter behaviour in v1.
       skip_checks: [],
       severity_overrides: %{},    # e.g. %{snapshot_health: :error}
       start_after: nil,
-      precision: :exact,          # :order_of_magnitude is reserved (bucketing planned)
+      precision: :exact,          # :order_of_magnitude buckets exported counts/bytes to powers of ten
       schemas: ["public"],
       snapshot_path: "priv/repo/cerbero_snapshot.json",
       migrations_paths: ["priv/repo/migrations"]
