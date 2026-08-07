@@ -57,6 +57,10 @@ jobs:
 
       - name: Build docs (warnings as errors)
         if: matrix.lint
+        # ex_doc is a dev-only dependency; the job-level MIX_ENV=test would
+        # leave the docs task undefined.
+        env:
+          MIX_ENV: dev
         run: mix docs --warnings-as-errors
 
   integration:
