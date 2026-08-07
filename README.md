@@ -87,7 +87,8 @@ CockroachDB only — no adapter behaviour in v1.
 
 ## Configuration
 
-`.cerbero.exs` (all optional):
+`.cerbero.exs` (all optional; `mix cerbero.gen.config` writes one with the
+defaults spelled out and commented):
 
     [
       rows_warning: 100_000,
