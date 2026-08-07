@@ -21,10 +21,11 @@ defmodule Cerbero.SnapshotTest do
     assert Canonical.encode(raw) == File.read!(@fixture)
   end
 
-  test "load rejects a corrupted snapshot with a checksum error" do
+  @tag :tmp_dir
+  test "load rejects a corrupted snapshot with a checksum error", %{tmp_dir: tmp_dir} do
     raw = @fixture |> File.read!() |> JSON.decode!()
     tampered = put_in(raw, ["tables", Access.at(0), "n_live_tup"], 1)
-    path = Path.join(System.tmp_dir!(), "tampered.json")
+    path = Path.join(tmp_dir, "tampered.json")
     File.write!(path, Canonical.encode(tampered))
     assert {:error, {:checksum_mismatch, _expected, _actual}} = Snapshot.load(path)
   end
@@ -111,26 +112,31 @@ defmodule Cerbero.SnapshotTest do
   end
 
   describe "format version gate" do
-    defp reload_with(fun) do
+    defp reload_with(tmp_dir, fun) do
       raw = "test/fixtures/snapshots/huge_table.json" |> File.read!() |> JSON.decode!()
-      path = Path.join(System.tmp_dir!(), "versioned.json")
+      path = Path.join(tmp_dir, "versioned.json")
       Cerbero.Snapshot.write!(fun.(raw), path)
       Cerbero.Snapshot.load(path)
     end
 
-    test "refuses a newer format_version, telling the user to upgrade" do
+    @tag :tmp_dir
+    test "refuses a newer format_version, telling the user to upgrade", %{tmp_dir: tmp_dir} do
       assert {:error, {:format_too_new, 3, "upgrade cerbero"}} =
-               reload_with(&Map.put(&1, "format_version", 3))
+               reload_with(tmp_dir, &Map.put(&1, "format_version", 3))
     end
 
-    test "still accepts the v1 format (no precision field)" do
+    @tag :tmp_dir
+    test "still accepts the v1 format (no precision field)", %{tmp_dir: tmp_dir} do
       assert {:ok, %Cerbero.Snapshot{format_version: 1, precision: :exact}} =
-               reload_with(& &1)
+               reload_with(tmp_dir, & &1)
     end
 
-    test "refuses an older-than-supported format_version, telling the user to re-export" do
+    @tag :tmp_dir
+    test "refuses an older-than-supported format_version, telling the user to re-export", %{
+      tmp_dir: tmp_dir
+    } do
       assert {:error, {:format_too_old, 0, "re-export the snapshot"}} =
-               reload_with(&Map.put(&1, "format_version", 0))
+               reload_with(tmp_dir, &Map.put(&1, "format_version", 0))
     end
   end
 

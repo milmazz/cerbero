@@ -34,9 +34,10 @@ defmodule Cerbero.Integration.ExporterTest do
     :ok
   end
 
-  test "export -> stamp -> write -> load -> strict decode round-trips" do
+  @tag :tmp_dir
+  test "export -> stamp -> write -> load -> strict decode round-trips", %{tmp_dir: tmp_dir} do
     assert {:ok, raw} = Exporter.export(@url)
-    path = Path.join(System.tmp_dir!(), "live_snapshot.json")
+    path = Path.join(tmp_dir, "live_snapshot.json")
     Snapshot.write!(raw, path)
     assert {:ok, %Snapshot{} = s} = Snapshot.load(path)
     assert s.engine.name == :postgres
@@ -74,9 +75,10 @@ defmodule Cerbero.Integration.ExporterTest do
     assert by_name["orgs"].n_live_tup == 100
   end
 
-  test "the emit-sql script and from-file rebuild the same snapshot" do
-    script = Path.join(System.tmp_dir!(), "cerbero_export.sql")
-    output = Path.join(System.tmp_dir!(), "cerbero_export.out")
+  @tag :tmp_dir
+  test "the emit-sql script and from-file rebuild the same snapshot", %{tmp_dir: tmp_dir} do
+    script = Path.join(tmp_dir, "cerbero_export.sql")
+    output = Path.join(tmp_dir, "cerbero_export.out")
     File.write!(script, Exporter.emit_sql())
 
     run_psql_script(script, output)
