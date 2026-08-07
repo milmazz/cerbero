@@ -78,6 +78,10 @@ It does not certify migrations as safe; it judges the statement, not the moment.
   survive. Introduces snapshot format v2 (adds the `precision` field; v1
   snapshots remain fully readable) and the check summary line notes the
   reduced precision.
+- `--format sarif` on `mix cerbero.check` — SARIF 2.1.0 output for GitHub
+  code-scanning annotations. Findings map `error`/`warning`/`note` from their
+  severities; global snapshot-health findings anchor to the committed snapshot
+  file so they still surface in PR review.
 
 ### Known limitations
 

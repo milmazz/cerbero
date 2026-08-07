@@ -1,5 +1,5 @@
 defmodule Cerbero.CLI.Format.JSON do
-  @moduledoc "Stable, versioned, canonically-encoded JSON output (SARIF adapter deferred)."
+  @moduledoc "Stable, versioned, canonically-encoded JSON output."
 
   alias Cerbero.Finding
   alias Cerbero.Snapshot.Canonical

@@ -127,7 +127,14 @@ defmodule Cerbero.CLI.Check do
         }
       }
 
-      render(parsed, findings, summary_line, summary, fail_on)
+      render(
+        parsed,
+        findings,
+        summary_line,
+        summary,
+        fail_on,
+        parsed[:snapshot] || config.snapshot_path
+      )
     else
       {:error, reason} -> {:error, "snapshot: #{inspect(reason)}"}
     end
@@ -157,14 +164,15 @@ defmodule Cerbero.CLI.Check do
       "snapshot" => nil
     }
 
-    render(parsed, findings, summary_line, summary, fail_on)
+    render(parsed, findings, summary_line, summary, fail_on, nil)
   end
 
-  defp render(parsed, findings, summary_line, summary, fail_on) do
+  defp render(parsed, findings, summary_line, summary, fail_on, snapshot_path) do
     output =
       case parsed[:format] || "human" do
         "human" -> Format.Human.render(findings, summary_line, parsed[:verbose] || false)
         "json" -> Format.JSON.render(findings, summary)
+        "sarif" -> Format.SARIF.render(findings, summary, snapshot_path)
         other -> {:error, "invalid --format: #{other}"}
       end
 
