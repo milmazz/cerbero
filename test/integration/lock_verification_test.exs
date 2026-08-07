@@ -2,9 +2,11 @@ defmodule Cerbero.Integration.LockVerificationTest do
   @moduledoc """
   Layer 4's empirical anchor: for every `Cerbero.DDL.Locks` PG entry that
   has an in-transaction-executable representative statement, run that
-  statement inside a transaction, read `pg_locks`, assert the mapped
-  mode, roll back. Any mismatch here is a bug in `Locks` (data), not in
-  this test — see the module doc there.
+  statement inside a transaction, read `pg_locks`, assert the mapped mode
+  is the *strongest* mode held on the target relation (not merely among
+  the held modes — that would let an over-locking regression hide behind
+  a weaker mapped entry), roll back. Any mismatch here is a bug in
+  `Locks` (data), not in this test — see the module doc there.
 
   Excluded from the per-class loop, each with a reason:
 
@@ -130,6 +132,24 @@ defmodule Cerbero.Integration.LockVerificationTest do
     row_exclusive: "RowExclusiveLock"
   }
 
+  # PG's lock-mode lattice, weakest -> strongest (pg_locks mode names).
+  # Asserting the strongest held mode on the target relation — not just
+  # membership — catches over-locking regressions: a statement that
+  # acquires a stronger lock than `Locks` maps would previously still
+  # pass as long as the mapped mode appeared somewhere in the set.
+  @mode_strength [
+                   "AccessShareLock",
+                   "RowShareLock",
+                   "RowExclusiveLock",
+                   "ShareUpdateExclusiveLock",
+                   "ShareLock",
+                   "ShareRowExclusiveLock",
+                   "ExclusiveLock",
+                   "AccessExclusiveLock"
+                 ]
+                 |> Enum.with_index()
+                 |> Map.new()
+
   for {version_num, url} <- @urls do
     %{host: host, port: port} = URI.parse(url)
     pg_version = div(version_num, 10_000)
@@ -211,9 +231,11 @@ defmodule Cerbero.Integration.LockVerificationTest do
               )
 
             modes = List.flatten(rows)
+            strongest = Enum.max_by(modes, &Map.fetch!(@mode_strength, &1))
 
-            assert @lock_names[expected_lock] in modes,
-                   "#{unquote(class)}: expected #{expected_lock} on #{unquote(relation)}, got #{inspect(modes)}"
+            assert strongest == @lock_names[expected_lock],
+                   "#{unquote(class)}: expected strongest #{expected_lock} on #{unquote(relation)}, " <>
+                     "strongest held is #{strongest} (all: #{inspect(modes)})"
 
             Postgrex.rollback(tx, :done)
           end)

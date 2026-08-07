@@ -82,6 +82,10 @@ It does not certify migrations as safe; it judges the statement, not the moment.
   code-scanning annotations. Findings map `error`/`warning`/`note` from their
   severities; global snapshot-health findings anchor to the committed snapshot
   file so they still surface in PR review.
+- Layer-4 lock verification now asserts the mapped lock is the *strongest*
+  mode held on the target relation, not merely among the held modes, so an
+  over-locking regression can no longer hide behind a weaker mapped entry.
+  Verified green against live PG 13 and PG 16.
 - CRDB analyze-timestamp equivalent: the exporter now fills
   `last_analyze`/`last_autoanalyze` for CockroachDB tables from statistics
   creation times (`system.table_statistics`, what `SHOW STATISTICS` reads) —
