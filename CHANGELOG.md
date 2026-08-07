@@ -135,6 +135,16 @@ It does not certify migrations as safe; it judges the statement, not the moment.
   built-in defaults, every setting visible and commented; deleting a line
   falls back to the same default. Refuses to overwrite without `--force`.
 
+### Fixed
+
+- `mix cerbero.snapshot` now writes to `config.snapshot_path` when `--out` is
+  omitted, instead of a hardcoded `priv/repo/cerbero_snapshot.json`. The two
+  tasks previously disagreed on the path whenever `snapshot_path` was
+  customized: the exporter wrote one place and `mix cerbero.check` read
+  another (silently judging a stale or absent artifact), and on layouts with
+  no `priv/repo/` at the root — umbrella apps — the write crashed outright.
+  Explicit `--out` still overrides.
+
 ### Known limitations
 
 - `down` bodies are judged only on request (`--down`); rollback judgments use
