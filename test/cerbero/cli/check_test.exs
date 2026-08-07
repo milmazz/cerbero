@@ -221,6 +221,39 @@ defmodule Cerbero.CLI.CheckTest do
     assert output =~ "order-of-magnitude precision"
   end
 
+  describe "--down" do
+    @down_migration """
+    defmodule DownUnsafe do
+      use Ecto.Migration
+      def up do
+      end
+      def down do
+        create index(:events, [:payload])
+      end
+    end
+    """
+
+    @tag :tmp_dir
+    test "down bodies are judged only with --down, and labeled", %{tmp_dir: tmp_dir} do
+      dir = Path.join(tmp_dir, "migrations")
+      File.mkdir_p!(dir)
+      File.write!(Path.join(dir, "20260801000002_down_unsafe.exs"), @down_migration)
+
+      {code_without, output_without} =
+        run(["--snapshot", @snapshot, "--migrations", dir, "--config", "nonexistent"])
+
+      assert code_without == 0
+      refute output_without =~ "unsafe_index_creation"
+
+      {code, output} =
+        run(["--snapshot", @snapshot, "--migrations", dir, "--config", "nonexistent", "--down"])
+
+      assert code == 1
+      assert output =~ "unsafe_index_creation"
+      assert output =~ "[down]"
+    end
+  end
+
   describe "multi-repo" do
     @repos_config """
     [

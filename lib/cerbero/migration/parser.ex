@@ -48,10 +48,13 @@ defmodule Cerbero.Migration.Parser do
     {module, body} = find_module(ast)
 
     with {:ok, attrs} <- attributes(body) do
-      operations =
-        body
-        |> migration_bodies()
-        |> Enum.flat_map(&extract_ops/1)
+      up_bodies = migration_bodies(body, [:up, :change])
+      down_bodies = migration_bodies(body, [:down])
+
+      operations = Enum.flat_map(up_bodies, &extract_ops/1)
+
+      down_operations =
+        Enum.flat_map(down_bodies, &extract_ops/1) ++ execute_down_ops(up_bodies)
 
       {:ok,
        %Migration{
@@ -59,7 +62,8 @@ defmodule Cerbero.Migration.Parser do
          module: module,
          version: version_from(file),
          attrs: attrs,
-         operations: operations
+         operations: operations,
+         down_operations: down_operations
        }}
     end
   end
@@ -137,13 +141,36 @@ defmodule Cerbero.Migration.Parser do
 
   defp decode_skips(_), do: {:error, :invalid_skip}
 
-  # up/1 and change/1 bodies are judged; down is out of scope in v1.
-  defp migration_bodies(body) do
+  # up/change bodies feed `operations`; down bodies feed `down_operations`
+  # (judged only under mix cerbero.check --down).
+  defp migration_bodies(body, names) do
     body
     |> block_nodes()
     |> Enum.flat_map(fn
-      {:def, _, [{name, _, _}, [do: fun_body]]} when name in [:up, :change] -> [fun_body]
-      _ -> []
+      {:def, _, [{name, _, _}, [do: fun_body]]} ->
+        if name in names, do: [fun_body], else: []
+
+      _ ->
+        []
+    end)
+  end
+
+  # The rollback leg of two-arg execute ("up sql", "down sql") lives in
+  # up/change bodies but runs only on rollback — it belongs to
+  # down_operations. A non-literal down leg is Unknown there, same honesty
+  # rule as everywhere else.
+  defp execute_down_ops(up_bodies) do
+    up_bodies
+    |> Enum.flat_map(&block_nodes/1)
+    |> Enum.flat_map(fn
+      {:execute, meta, [_up, down_sql | _]} when is_binary(down_sql) ->
+        [%Op.RawSQL{sql: down_sql, line: meta[:line], classified: Classifier.classify(down_sql)}]
+
+      {:execute, meta, [_up, _dynamic_down | _]} ->
+        [unknown(meta, "execute down leg with non-literal SQL")]
+
+      _ ->
+        []
     end)
   end
 

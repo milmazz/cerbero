@@ -82,6 +82,11 @@ It does not certify migrations as safe; it judges the statement, not the moment.
   code-scanning annotations. Findings map `error`/`warning`/`note` from their
   severities; global snapshot-health findings anchor to the committed snapshot
   file so they still surface in PR review.
+- `mix cerbero.check --down` judges rollback bodies: `def down` operations and
+  the down leg of two-arg `execute` are parsed into their own operation list
+  and judged against the catalog as the pending ups leave it (the state a
+  rollback starts from), with findings labeled `[down]`. Off by default —
+  deploy-direction output is unchanged without the flag.
 - Multi-repo configuration for umbrella apps: a `repos` config key defines one
   `{name, migrations_paths, snapshot_path}` entry per Ecto repo. With no flag,
   `mix cerbero.check` runs every repo and merges findings into one document
@@ -125,6 +130,7 @@ It does not certify migrations as safe; it judges the statement, not the moment.
 
 ### Known limitations
 
-- `down` migration bodies are not judged.
+- `down` bodies are judged only on request (`--down`); rollback judgments use
+  the post-up catalog state in version order, not a one-at-a-time unwind.
 - A snapshot is point-in-time: pending vs. applied-after-snapshot is
   offline-indistinguishable; scheduled re-export is the real mitigation.

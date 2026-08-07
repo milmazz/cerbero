@@ -132,6 +132,54 @@ defmodule Cerbero.Migration.ParserTest do
              """)
   end
 
+  test "down bodies are captured separately as down_operations" do
+    {:ok, %Migration{operations: up_ops, down_operations: down_ops}} =
+      Parser.parse_string("""
+      defmodule M do
+        use Ecto.Migration
+        def up do
+          create index(:events, [:org_id], concurrently: true)
+        end
+        def down do
+          create index(:events, [:payload])
+          execute "TRUNCATE events"
+        end
+      end
+      """)
+
+    assert [%CreateIndex{concurrently: true}] = up_ops
+
+    assert [%CreateIndex{concurrently: false}, %RawSQL{classified: [%{class: :truncate}]}] =
+             down_ops
+  end
+
+  test "two-arg execute: the down SQL lands in down_operations, classified" do
+    {:ok, %Migration{operations: up_ops, down_operations: down_ops}} =
+      Parser.parse_string("""
+      defmodule M do
+        use Ecto.Migration
+        def change do
+          execute "CREATE INDEX i ON events (x)", "DROP INDEX i"
+        end
+      end
+      """)
+
+    assert [%RawSQL{sql: "CREATE INDEX i ON events (x)"}] = up_ops
+    assert [%RawSQL{sql: "DROP INDEX i", classified: [%{class: :drop_index}]}] = down_ops
+  end
+
+  test "a change-only migration has empty down_operations" do
+    {:ok, %Migration{down_operations: []}} =
+      Parser.parse_string("""
+      defmodule M do
+        use Ecto.Migration
+        def change do
+          create index(:events, [:org_id], concurrently: true)
+        end
+      end
+      """)
+  end
+
   test "dynamic constructs become Unknown, never silence, never execution" do
     assert [%Unknown{}] =
              ops!("""

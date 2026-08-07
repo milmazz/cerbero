@@ -14,6 +14,7 @@ defmodule Cerbero.CLI.Check do
     format: :string,
     fail_on: :string,
     no_snapshot: :boolean,
+    down: :boolean,
     repo: :string,
     verbose: :boolean
   ]
@@ -154,9 +155,28 @@ defmodule Cerbero.CLI.Check do
 
   defp collect(parsed, config, migrations, clock) do
     if parsed[:no_snapshot] do
-      structural(config, migrations)
+      structural(parsed, config, migrations)
     else
       with_snapshot(parsed, config, migrations, clock)
+    end
+  end
+
+  # Rollbacks are deploys too: with --down, each pending migration's down
+  # body is judged against the catalog as the pending ups leave it — the
+  # state a rollback actually starts from. (Approximation: downs are
+  # judged in version order against that one post-up state, not unwound
+  # one at a time.)
+  defp down_findings(parsed, pending, catalog_after_up, config) do
+    if parsed[:down] do
+      down_pending =
+        pending
+        |> Enum.filter(&(&1.down_operations != []))
+        |> Enum.map(&%{&1 | operations: &1.down_operations})
+
+      {findings, _catalog} = Runner.run(down_pending, catalog_after_up, config)
+      Enum.map(findings, &%{&1 | message: "[down] " <> &1.message})
+    else
+      []
     end
   end
 
@@ -210,8 +230,8 @@ defmodule Cerbero.CLI.Check do
       health =
         SnapshotHealth.run_global(snapshot, staleness, migrations, pending, catalog, config)
 
-      {findings, _catalog} = Runner.run(pending, catalog, config)
-      findings = health ++ findings
+      {findings, catalog_after_up} = Runner.run(pending, catalog, config)
+      findings = health ++ findings ++ down_findings(parsed, pending, catalog_after_up, config)
 
       summary_line =
         "judged against snapshot of #{snapshot.database}, " <>
@@ -244,14 +264,15 @@ defmodule Cerbero.CLI.Check do
     end
   end
 
-  defp structural(config, migrations) do
+  defp structural(parsed, config, migrations) do
     {history, pending} =
       Enum.split_with(migrations, fn m ->
         config.start_after != nil and m.version != nil and m.version <= config.start_after
       end)
 
     catalog = Enum.reduce(history, Catalog.empty(), &Catalog.apply_migration(&2, &1))
-    {findings, _} = Runner.run(pending, catalog, config)
+    {findings, catalog_after_up} = Runner.run(pending, catalog, config)
+    findings = findings ++ down_findings(parsed, pending, catalog_after_up, config)
 
     findings =
       Enum.map(
