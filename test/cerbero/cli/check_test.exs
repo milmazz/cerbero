@@ -68,6 +68,36 @@ defmodule Cerbero.CLI.CheckTest do
     assert %{"cerbero_findings_version" => 1, "findings" => [_ | _]} = JSON.decode!(output)
   end
 
+  test "sarif output matches golden and anchors findings for code scanning" do
+    {code, output} =
+      run([
+        "--snapshot",
+        @snapshot,
+        "--migrations",
+        @migrations,
+        "--config",
+        "nonexistent",
+        "--format",
+        "sarif"
+      ])
+
+    assert code == 1
+    golden("check_sarif.json", output)
+
+    doc = JSON.decode!(output)
+    assert doc["version"] == "2.1.0"
+
+    [sarif_run] = doc["runs"]
+    assert sarif_run["tool"]["driver"]["name"] == "cerbero"
+    assert [result | _] = sarif_run["results"]
+    assert result["ruleId"] == "unsafe_index_creation"
+    assert result["level"] == "error"
+
+    [%{"physicalLocation" => loc}] = result["locations"]
+    assert loc["artifactLocation"]["uri"] =~ "20260801000000_add_events_payload_index.exs"
+    assert loc["region"] == %{"startLine" => 5}
+  end
+
   test "missing snapshot is exit 2 (operational), not exit 1" do
     {code, output} =
       run([
