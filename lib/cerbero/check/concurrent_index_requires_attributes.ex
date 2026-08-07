@@ -8,6 +8,7 @@ defmodule Cerbero.Check.ConcurrentIndexRequiresAttributes do
 
   alias Cerbero.Check.Helpers
   alias Cerbero.Operation, as: Op
+  alias Cerbero.SQL.Classifier.Classified
 
   @impl true
   def id, do: :concurrent_index_requires_attributes
@@ -19,11 +20,11 @@ defmodule Cerbero.Check.ConcurrentIndexRequiresAttributes do
     if ddl and lock do
       []
     else
-      for %Op.CreateIndex{concurrently: true, line: line} <- migration.operations do
+      for op <- migration.operations, line <- concurrent_index_lines(op) do
         Helpers.finding(
           __MODULE__,
           :error,
-          "concurrently: true requires both @disable_ddl_transaction true and " <>
+          "CREATE INDEX CONCURRENTLY requires both @disable_ddl_transaction true and " <>
             "@disable_migration_lock true; without them the deploy fails and leaves an invalid index",
           migration,
           line
@@ -31,4 +32,14 @@ defmodule Cerbero.Check.ConcurrentIndexRequiresAttributes do
       end
     end
   end
+
+  defp concurrent_index_lines(%Op.CreateIndex{concurrently: true, line: line}), do: [line]
+
+  # Raw per-partition CIC is rule 1's own partitioned-parent remediation;
+  # following that advice must not fail at deploy time either.
+  defp concurrent_index_lines(%Op.RawSQL{classified: classified, line: line}) do
+    for %Classified{class: :create_index, concurrently: true} <- classified, do: line
+  end
+
+  defp concurrent_index_lines(_op), do: []
 end

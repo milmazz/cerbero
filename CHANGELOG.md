@@ -34,7 +34,10 @@ It does not certify migrations as safe; it judges the statement, not the moment.
   primary-key columns count as covered), CockroachDB
   transactional-DDL restrictions, snapshot health (staleness, invalid indexes,
   history divergence, absent tables), unbatched DML at scale, and
-  `CREATE INDEX CONCURRENTLY` attribute requirements.
+  `CREATE INDEX CONCURRENTLY` attribute requirements (both the DSL
+  `concurrently: true` form and raw-SQL CIC — including the raw
+  per-partition CIC that rule 1's own partitioned-parent remediation
+  recommends).
 - A raw-DDL safety net: classified raw SQL that no named rule owns is still
   judged by lock mode and cost — an ACCESS EXCLUSIVE-taking operation is
   never silent, and `TRUNCATE` carries an error-severity floor.
