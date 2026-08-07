@@ -37,22 +37,6 @@ defmodule Cerbero.Check.NeverSilentTest do
   # below will fail loudly, which is the point: shrink this set, add a
   # sample statement, and the net covers it.
   @unreachable %{
-    # No Cerbero.SQL.Classifier pattern recognizes ATTACH/DETACH PARTITION
-    # or SET LOGGED/UNLOGGED raw SQL, and no Ecto DSL Operation maps to
-    # them either — the "partition classes" the net's own design
-    # anticipates as legitimate exclusions.
-    attach_partition: "no classifier pattern for raw SQL ATTACH PARTITION; no DSL op either",
-    detach_partition: "no classifier pattern for raw SQL DETACH PARTITION; no DSL op either",
-    set_logged: "no classifier pattern for raw SQL SET LOGGED/UNLOGGED; no DSL op either",
-    # RenameOp exists as a DSL-only Operation (Cerbero.Operation.RenameOp,
-    # produced by the Ecto DSL `rename/2`); the classifier has no raw SQL
-    # RENAME pattern, so it's excluded from this raw-SQL-driven net. The DSL
-    # path IS judged: RawDDLSafety routes RenameOp through its generic AEL
-    # note (see raw_ddl_safety_test.exs).
-    rename: "no classifier pattern for raw SQL RENAME (DSL path judged by RawDDLSafety)",
-    # Documented in Cerbero.DDL.Effects's own moduledoc: no classification
-    # path (raw SQL or DSL) emits this class at all.
-    set_default: "never emitted by Effects.classify/sql_class on any path (see its moduledoc)",
     # Binary-coercibility (varchar widen, varchar->text) is a distinction
     # Cerbero.Check.ColumnTypeChange computes itself over the plain
     # :alter_column_type class; it is not a separate classifier output.
@@ -97,6 +81,15 @@ defmodule Cerbero.Check.NeverSilentTest do
       ~s|ALTER TABLE events ADD CONSTRAINT events_org_fk2 FOREIGN KEY (org_id) REFERENCES orgs (id) NOT VALID|,
     validate_foreign_key: ~s|ALTER TABLE events VALIDATE CONSTRAINT events_org_fk2|,
     alter_column_type: ~s|ALTER TABLE events ALTER COLUMN id TYPE bigint|,
+    rename: ~s|ALTER TABLE events RENAME TO events_old|,
+    # The scan is charged to the attached partition, so the 412M fixture
+    # plays the partition role here.
+    attach_partition: ~s|ALTER TABLE orgs ATTACH PARTITION events FOR VALUES FROM (0) TO (10)|,
+    detach_partition: ~s|ALTER TABLE events DETACH PARTITION orgs|,
+    set_logged: ~s|ALTER TABLE events SET LOGGED|,
+    set_unlogged: ~s|ALTER TABLE events SET UNLOGGED|,
+    set_default: ~s|ALTER TABLE events ALTER COLUMN org_id SET DEFAULT 0|,
+    drop_default: ~s|ALTER TABLE events ALTER COLUMN org_id DROP DEFAULT|,
     truncate: ~s|TRUNCATE events|,
     reindex: ~s|REINDEX TABLE events|,
     reindex_concurrently: ~s|REINDEX TABLE CONCURRENTLY events|,

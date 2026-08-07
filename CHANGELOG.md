@@ -29,13 +29,24 @@ It does not certify migrations as safe; it judges the statement, not the moment.
   in raw SQL), volatile-default and `GENERATED ... STORED` rewrites, catalog-aware
   column type changes (binary-coercible pairs stay quiet; index rebuilds are
   named), foreign-key validation scans (both tables' scale; the referenced
-  table's blocked writes are called out), missing FK indexes, CockroachDB
+  table's blocked writes are called out), missing FK indexes (covering both
+  `alter table` adds and `references(...)` declared inside the create block;
+  primary-key columns count as covered), CockroachDB
   transactional-DDL restrictions, snapshot health (staleness, invalid indexes,
   history divergence, absent tables), unbatched DML at scale, and
-  `CREATE INDEX CONCURRENTLY` attribute requirements.
+  `CREATE INDEX CONCURRENTLY` attribute requirements (both the DSL
+  `concurrently: true` form and raw-SQL CIC — including the raw
+  per-partition CIC that rule 1's own partitioned-parent remediation
+  recommends).
 - A raw-DDL safety net: classified raw SQL that no named rule owns is still
   judged by lock mode and cost — an ACCESS EXCLUSIVE-taking operation is
   never silent, and `TRUNCATE` carries an error-severity floor.
+- Classifier patterns for the remaining raw DDL: `RENAME` (table, column,
+  constraint), `ATTACH/DETACH PARTITION` (the attach validation scan is
+  charged to the attached partition; `DETACH ... CONCURRENTLY` is
+  recognized), `SET LOGGED`/`SET UNLOGGED` (full rewrite under ACCESS
+  EXCLUSIVE), and `SET/DROP DEFAULT` — all judged by the raw-DDL safety
+  net instead of surfacing as generic `unclassified_sql` warnings.
 - Severity that tracks reality: row/byte tiers, traffic-aware lock-queue
   gating, staleness headroom (thresholds shrink as the snapshot ages), and
   degradation to unknown-is-unbounded past the configured age. Unknown scale
@@ -50,6 +61,10 @@ It does not certify migrations as safe; it judges the statement, not the moment.
   still shown) and configuration via `.cerbero.exs` (thresholds, headroom,
   staleness ages, severity overrides, `strict_concurrent_index`,
   `lock_timeout_attested`, schemas, paths).
+- Aged-pending grace window tied to deploy cadence: the `deploy_cadence`
+  config key (days, default 1) keeps the snapshot-health heuristic from
+  flagging every pending migration merely older than a nightly-refreshed
+  snapshot; only migrations predating it by more than one deploy cycle warn.
 - Opt-in `precision: :order_of_magnitude` export mode (config or
   `mix cerbero.snapshot --precision`): buckets every exported count and byte
   to its power-of-ten floor so committed snapshots do not reveal exact
@@ -61,8 +76,5 @@ It does not certify migrations as safe; it judges the statement, not the moment.
 ### Known limitations
 
 - `down` migration bodies are not judged.
-- Raw-SQL `RENAME`, `ATTACH/DETACH PARTITION`, and `SET LOGGED/UNLOGGED`
-  forms have no classifier patterns yet and surface as `unclassified_sql`
-  warnings rather than typed findings.
 - A snapshot is point-in-time: pending vs. applied-after-snapshot is
   offline-indistinguishable; scheduled re-export is the real mitigation.

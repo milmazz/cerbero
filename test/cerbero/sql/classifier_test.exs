@@ -153,6 +153,49 @@ defmodule Cerbero.SQL.ClassifierTest do
              Classifier.classify("UPDATE events SET note = 'caf" <> <<0xC3>>)
   end
 
+  test "raw RENAME (table, column, constraint) classifies as :rename with the table" do
+    assert %Classified{class: :rename, table: "events"} =
+             one("ALTER TABLE events RENAME TO events_old")
+
+    assert %Classified{class: :rename, table: "events"} =
+             one("ALTER TABLE events RENAME COLUMN org_id TO owner_org_id")
+
+    assert %Classified{class: :rename, table: "events"} =
+             one("ALTER TABLE events RENAME CONSTRAINT c1 TO c2")
+  end
+
+  test "ATTACH/DETACH PARTITION capture parent and partition" do
+    assert %Classified{class: :attach_partition, table: "events", ref_table: "events_p0"} =
+             one("ALTER TABLE events ATTACH PARTITION events_p0 FOR VALUES FROM (0) TO (10)")
+
+    assert %Classified{
+             class: :detach_partition,
+             table: "events",
+             ref_table: "events_p0",
+             concurrently: false
+           } =
+             one("ALTER TABLE events DETACH PARTITION events_p0")
+
+    assert %Classified{class: :detach_partition, concurrently: true} =
+             one("ALTER TABLE events DETACH PARTITION events_p0 CONCURRENTLY")
+  end
+
+  test "SET LOGGED / SET UNLOGGED are distinct classes" do
+    assert %Classified{class: :set_logged, table: "events"} =
+             one("ALTER TABLE events SET LOGGED")
+
+    assert %Classified{class: :set_unlogged, table: "events"} =
+             one("ALTER TABLE events SET UNLOGGED")
+  end
+
+  test "SET DEFAULT / DROP DEFAULT on a column" do
+    assert %Classified{class: :set_default, table: "events", column: "org_id"} =
+             one("ALTER TABLE events ALTER COLUMN org_id SET DEFAULT 0")
+
+    assert %Classified{class: :drop_default, table: "events", column: "org_id"} =
+             one("ALTER TABLE events ALTER COLUMN org_id DROP DEFAULT")
+  end
+
   test "quoted identifiers preserve case" do
     assert %Classified{class: :create_table, table: "Flags"} =
              one("CREATE TABLE \"Flags\" (id int)")

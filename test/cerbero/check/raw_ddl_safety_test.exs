@@ -109,6 +109,39 @@ defmodule Cerbero.Check.RawDDLSafetyTest do
              """)
   end
 
+  test "raw SET UNLOGGED on 412M rows: error (full rewrite, previously an unclassified warning)" do
+    assert [%Finding{check: :raw_ddl_safety, severity: :error, message: msg}] =
+             judge_rule([big_events_table()], ~s|execute "ALTER TABLE events SET UNLOGGED"|)
+
+    assert msg =~ "ACCESS EXCLUSIVE"
+    assert msg =~ "rewrite"
+  end
+
+  test "raw ATTACH PARTITION of an existing populated table: scan finding on the partition" do
+    parent = table("events_part", %{"partitioned" => true})
+
+    assert [%Finding{check: :raw_ddl_safety, message: msg}] =
+             judge_rule(
+               [parent, big_events_table()],
+               ~s|execute "ALTER TABLE events_part ATTACH PARTITION events FOR VALUES FROM (0) TO (10)"|
+             )
+
+    assert msg =~ "public.events"
+    assert msg =~ "scan"
+  end
+
+  test "raw ATTACH PARTITION of a partition born in the same pending set: silent" do
+    parent = table("events_part", %{"partitioned" => true})
+
+    assert [] =
+             judge_rule([parent], """
+             create table(:events_p1) do
+               add :id, :bigint
+             end
+             execute "ALTER TABLE events_part ATTACH PARTITION events_p1 FOR VALUES FROM (0) TO (10)"
+             """)
+  end
+
   describe "IMPORTANT 4: raw DROP INDEX / REINDEX target resolution" do
     test "raw DROP INDEX resolves against the catalog and is judged against the owning table" do
       t =

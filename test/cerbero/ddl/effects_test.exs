@@ -88,6 +88,67 @@ defmodule Cerbero.DDL.EffectsTest do
              )
   end
 
+  test "raw ATTACH PARTITION: the validation scan is charged to the attached partition" do
+    assert [
+             %Effect{
+               class: :attach_partition,
+               lock: :share_update_exclusive,
+               cost: :full_scan,
+               relations: [target: "events_p0", referenced: "events"]
+             }
+           ] =
+             effects(
+               migration(
+                 ~s|execute "ALTER TABLE events ATTACH PARTITION events_p0 FOR VALUES FROM (0) TO (10)"|
+               )
+             )
+  end
+
+  test "raw DETACH PARTITION: AEL on the parent; CONCURRENTLY is SUE on PG >= 14" do
+    assert [
+             %Effect{
+               class: :detach_partition,
+               lock: :access_exclusive,
+               cost: :metadata_only,
+               relations: [target: "events", referenced: "events_p0"]
+             }
+           ] =
+             effects(migration(~s|execute "ALTER TABLE events DETACH PARTITION events_p0"|))
+
+    assert [%Effect{class: :detach_partition_concurrently, lock: :share_update_exclusive}] =
+             effects(
+               migration(~s|execute "ALTER TABLE events DETACH PARTITION events_p0 CONCURRENTLY"|)
+             )
+  end
+
+  test "raw SET LOGGED / SET UNLOGGED: full rewrite under AEL" do
+    assert [%Effect{class: :set_logged, lock: :access_exclusive, cost: :rewrite}] =
+             effects(migration(~s|execute "ALTER TABLE events SET LOGGED"|))
+
+    assert [
+             %Effect{
+               class: :set_unlogged,
+               lock: :access_exclusive,
+               cost: :rewrite,
+               relations: [target: "events"]
+             }
+           ] =
+             effects(migration(~s|execute "ALTER TABLE events SET UNLOGGED"|))
+  end
+
+  test "raw RENAME and SET/DROP DEFAULT: metadata-only under AEL" do
+    assert [%Effect{class: :rename, lock: :access_exclusive, cost: :metadata_only}] =
+             effects(migration(~s|execute "ALTER TABLE events RENAME TO events_old"|))
+
+    assert [%Effect{class: :set_default, cost: :metadata_only, relations: [target: "events"]}] =
+             effects(
+               migration(~s|execute "ALTER TABLE events ALTER COLUMN org_id SET DEFAULT 0"|)
+             )
+
+    assert [%Effect{class: :drop_default, cost: :metadata_only, relations: [target: "events"]}] =
+             effects(migration(~s|execute "ALTER TABLE events ALTER COLUMN org_id DROP DEFAULT"|))
+  end
+
   test "Unknown operations derive to the conservative default with unmapped: true" do
     assert [%Effect{lock: :access_exclusive, cost: :rewrite, unmapped: true}] =
              effects(migration("for t <- [:a], do: create(index(t, [:x]))"))

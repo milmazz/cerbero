@@ -270,6 +270,46 @@ defmodule Cerbero.SQL.Classifier do
 
       m =
           run(
+            ~r/^alter table (?:only )?(?:if exists )?#{@ident} alter column (\S+) set default /,
+            n
+          ) ->
+        %Classified{class: :set_default, table: unq(m[1]), column: unq(m[2])}
+
+      m =
+          run(
+            ~r/^alter table (?:only )?(?:if exists )?#{@ident} alter column (\S+) drop default/,
+            n
+          ) ->
+        %Classified{class: :drop_default, table: unq(m[1]), column: unq(m[2])}
+
+      m = run(~r/^alter table (?:only )?(?:if exists )?#{@ident} rename /, n) ->
+        %Classified{class: :rename, table: unq(m[1])}
+
+      m = run(~r/^alter table (?:only )?(?:if exists )?#{@ident} attach partition #{@ident}/, n) ->
+        %Classified{class: :attach_partition, table: unq(m[1]), ref_table: unq(m[2])}
+
+      m =
+          run(
+            ~r/^alter table (?:only )?(?:if exists )?#{@ident} detach partition #{@ident}( concurrently)?/,
+            n
+          ) ->
+        %Classified{
+          class: :detach_partition,
+          table: unq(m[1]),
+          ref_table: unq(m[2]),
+          # Regex.run omits unmatched trailing groups entirely, so an absent
+          # CONCURRENTLY leaves m[3] nil rather than "".
+          concurrently: (m[3] || "") != ""
+        }
+
+      m = run(~r/^alter table (?:only )?(?:if exists )?#{@ident} set (logged|unlogged)(?: |$)/, n) ->
+        %Classified{
+          class: if(m[2] == "logged", do: :set_logged, else: :set_unlogged),
+          table: unq(m[1])
+        }
+
+      m =
+          run(
             ~r/^alter table (?:only )?(?:if exists )?#{@ident} add (?:constraint (\S+) )?primary key/,
             n
           ) ->

@@ -65,6 +65,37 @@ defmodule Cerbero.Check.FKTest do
     assert msg =~ "owner_org_id"
   end
 
+  test "rule 6 sees references(...) declared inside create table" do
+    assert [%Finding{check: :fk_missing_index, severity: :warning, message: msg}] =
+             judge([FKMissingIndex], [orgs()], """
+             create table(:events_v2) do
+               add :owner_org_id, references(:orgs)
+             end
+             """)
+
+    assert msg =~ "owner_org_id"
+    assert msg =~ "public.orgs"
+  end
+
+  test "create-table FK with an index created in the same migration: silent" do
+    assert [] =
+             judge([FKMissingIndex], [orgs()], """
+             create table(:events_v2) do
+               add :owner_org_id, references(:orgs)
+             end
+             create index(:events_v2, [:owner_org_id])
+             """)
+  end
+
+  test "create-table FK on a primary-key column is covered by the PK index" do
+    assert [] =
+             judge([FKMissingIndex], [orgs()], """
+             create table(:org_prefs, primary_key: false) do
+               add :org_id, references(:orgs), primary_key: true
+             end
+             """)
+  end
+
   test "an index created in the same migration counts as covering" do
     assert [] =
              judge(

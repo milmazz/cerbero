@@ -26,7 +26,7 @@ defmodule Cerbero.Check.SnapshotHealth do
     age_findings(staleness, config) ++
       invalid_index_findings(snapshot) ++
       divergence_findings(snapshot, all_migrations) ++
-      aged_pending_findings(snapshot, pending) ++
+      aged_pending_findings(snapshot, pending, config) ++
       standby_findings(snapshot) ++
       absent_table_findings(pending, catalog)
   end
@@ -100,16 +100,23 @@ defmodule Cerbero.Check.SnapshotHealth do
     end
   end
 
-  defp aged_pending_findings(%Snapshot{collected_at: collected_at}, pending) do
+  # Grace window: a migration authored within one deploy cycle of the
+  # snapshot is normal PR churn (under nightly refresh, warning on every
+  # predating migration flags most open PRs). Only past deploy_cadence days
+  # does "still pending" become a stale-deploy signal worth surfacing.
+  defp aged_pending_findings(%Snapshot{collected_at: collected_at}, pending, %Config{} = config) do
+    grace_seconds = config.deploy_cadence * 86_400
+
     for m <- pending,
         m.version != nil,
         version_datetime = version_to_datetime(m.version),
         version_datetime != nil,
-        DateTime.compare(version_datetime, collected_at) == :lt do
+        DateTime.diff(collected_at, version_datetime, :second) > grace_seconds do
       finding(
         :warning,
-        "pending migration #{m.version} predates the snapshot (#{DateTime.to_date(collected_at)}) — " <>
-          "it may already be applied (pending vs applied-after-snapshot is offline-indistinguishable); re-export",
+        "pending migration #{m.version} predates the snapshot (#{DateTime.to_date(collected_at)}) " <>
+          "by more than deploy_cadence (#{config.deploy_cadence}d) — it may already be applied " <>
+          "(pending vs applied-after-snapshot is offline-indistinguishable); re-export",
         file: m.file
       )
     end
