@@ -82,6 +82,37 @@ defmodule Cerbero.SQL.ClassifierTest do
              one("ALTER TABLE events ADD COLUMN flags integer DEFAULT 0")
   end
 
+  test "raw ADD COLUMN DEFAULT volatility heuristic: function-call defaults are volatile" do
+    assert %Classified{class: :add_column, volatile_default: true} =
+             one("ALTER TABLE events ADD COLUMN token uuid DEFAULT gen_random_uuid()")
+
+    assert %Classified{class: :add_column, volatile_default: true} =
+             one("ALTER TABLE events ADD COLUMN at timestamptz DEFAULT now()")
+
+    assert %Classified{class: :add_column, volatile_default: true} =
+             one("ALTER TABLE events ADD COLUMN pos bigint DEFAULT nextval('events_pos_seq')")
+
+    assert %Classified{class: :add_column, volatile_default: true} =
+             one("ALTER TABLE events ADD COLUMN score double precision DEFAULT (random() * 100)")
+  end
+
+  test "raw ADD COLUMN DEFAULT volatility heuristic: literal and cast defaults are constant" do
+    assert %Classified{class: :add_column, volatile_default: false} =
+             one("ALTER TABLE events ADD COLUMN flags integer DEFAULT 0")
+
+    assert %Classified{class: :add_column, volatile_default: false} =
+             one("ALTER TABLE events ADD COLUMN meta jsonb DEFAULT '{}'::jsonb")
+
+    assert %Classified{class: :add_column, volatile_default: false} =
+             one("ALTER TABLE events ADD COLUMN name text DEFAULT 'unknown' NOT NULL")
+
+    assert %Classified{class: :add_column, volatile_default: false} =
+             one("ALTER TABLE events ADD COLUMN flags integer DEFAULT 0 CHECK (flags >= 0)")
+
+    assert %Classified{class: :add_column, volatile_default: false} =
+             one("ALTER TABLE events ADD COLUMN flags integer")
+  end
+
   test "DML detection" do
     assert %Classified{class: :update, table: "events"} = one("UPDATE events SET x = 1")
     assert %Classified{class: :delete, table: "events"} = one("DELETE FROM events WHERE x = 1")

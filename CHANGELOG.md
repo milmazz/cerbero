@@ -82,6 +82,12 @@ It does not certify migrations as safe; it judges the statement, not the moment.
   code-scanning annotations. Findings map `error`/`warning`/`note` from their
   severities; global snapshot-health findings anchor to the committed snapshot
   file so they still surface in PR review.
+- Raw-SQL `ADD COLUMN ... DEFAULT` volatility detection for rule 3: a default
+  opening with a function call or parenthesized expression (`now()`,
+  `random()`, `gen_random_uuid()`, `nextval(...)`) now classifies as
+  `add_column_volatile_default` and gets the rewrite warning, mirroring the
+  exporter's literal-vs-expression honesty line; literals and casts stay
+  metadata-only.
 - CRDB type changes now name the real remaining rejection: when the table has
   a separate `GENERATED ... STORED` column, the warning cites the
   dependent-generated-column mechanism (SQLSTATE 2BP01) and its drop/re-add

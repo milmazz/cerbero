@@ -21,6 +21,24 @@ defmodule Cerbero.Check.DefaultRewriteTest do
     assert msg =~ "rewrite"
   end
 
+  test "raw-SQL ADD COLUMN with a volatile default gets the same rewrite error as the DSL form" do
+    assert [%Finding{check: :column_default_rewrite, severity: :error, message: msg}] =
+             judge_rule(
+               [big_events_table()],
+               ~s|execute "ALTER TABLE events ADD COLUMN token uuid DEFAULT gen_random_uuid()"|
+             )
+
+    assert msg =~ "rewrite"
+  end
+
+  test "raw-SQL ADD COLUMN with a literal default stays metadata-only: silent" do
+    assert [] =
+             judge_rule(
+               [big_events_table()],
+               ~s|execute "ALTER TABLE events ADD COLUMN flags integer DEFAULT 0"|
+             )
+  end
+
   test "GENERATED ... STORED rewrites on every version — the folklore trap" do
     assert [%Finding{severity: :error, message: msg}] =
              judge_rule(

@@ -31,7 +31,8 @@ defmodule Cerbero.SQL.Classifier do
               concurrently: false,
               not_valid: false,
               unique: false,
-              ref_table: nil
+              ref_table: nil,
+              volatile_default: false
   end
 
   @ident ~S{((?:"[^"]+"|[a-z_][a-z0-9_$]*)(?:\.(?:"[^"]+"|[a-z_][a-z0-9_$]*))?)}
@@ -327,7 +328,12 @@ defmodule Cerbero.SQL.Classifier do
             ~r/^alter table (?:only )?(?:if exists )?#{@ident} add (?:column )?(?:if not exists )?(\S+) /,
             n
           ) ->
-        %Classified{class: :add_column, table: unq(m[1]), column: unq(m[2])}
+        %Classified{
+          class: :add_column,
+          table: unq(m[1]),
+          column: unq(m[2]),
+          volatile_default: volatile_default?(n)
+        }
 
       m =
           run(
@@ -368,4 +374,13 @@ defmodule Cerbero.SQL.Classifier do
   defp unq(nil), do: nil
   defp unq(""), do: nil
   defp unq(ident), do: ident |> String.replace("\"", "") |> String.trim_trailing(",")
+
+  # DEFAULT volatility heuristic, mirroring the exporter's default_kind
+  # honesty line (literal vs. expression): a DEFAULT immediately followed
+  # by a function call (now(), random(), gen_random_uuid(), nextval(...))
+  # or a parenthesized expression is treated as volatile; bare literals
+  # and casts ('{}'::jsonb) are not. Clauses after a literal default
+  # (CHECK (...), NOT NULL) don't match — the paren must open the default
+  # expression itself.
+  defp volatile_default?(n), do: n =~ ~r/ default (?:[a-z_][a-z0-9_$.]*)?\(/
 end
