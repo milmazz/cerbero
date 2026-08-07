@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  MIX_ENV: test
+
+jobs:
+  test:
+    name: Unit (Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Floor: oldest supported pair (stdlib JSON requires Elixir >= 1.18)
+          - elixir: "1.18"
+            otp: "27"
+          # Latest: the pair the project is developed against
+          - elixir: "1.20"
+            otp: "29"
+            lint: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ matrix.elixir }}
+          otp-version: ${{ matrix.otp }}
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            mix-${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-
+
+      - run: mix deps.get
+
+      - name: Check formatting
+        if: matrix.lint
+        run: mix format --check-formatted
+
+      - name: Compile (warnings as errors)
+        run: mix compile --warnings-as-errors
+
+      - name: Run unit and golden tests
+        run: mix test
+
+      - name: Build docs (warnings as errors)
+        if: matrix.lint
+        run: mix docs --warnings-as-errors
+
+  integration:
+    name: Integration (PG 13/16 + CockroachDB)
+    runs-on: ubuntu-latest
+    services:
+      pg13:
+        image: postgres:13
+        env:
+          POSTGRES_PASSWORD: cerbero
+          POSTGRES_DB: cerbero_test
+        ports:
+          - 54313:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      pg16:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: cerbero
+          POSTGRES_DB: cerbero_test
+        ports:
+          - 54316:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # GitHub service containers cannot override the image command, and the
+      # cockroach image needs `start-single-node`; run it directly instead.
+      - name: Start CockroachDB
+        run: |
+          docker run -d --name crdb -p 26257:26257 \
+            cockroachdb/cockroach:latest-v25.1 start-single-node --insecure
+          for i in $(seq 1 30); do
+            docker exec crdb cockroach sql --insecure -e 'SELECT 1' >/dev/null 2>&1 && exit 0
+            sleep 2
+          done
+          echo "CockroachDB did not become ready" >&2
+          docker logs crdb >&2
+          exit 1
+
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.20"
+          otp-version: "29"
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-${{ runner.os }}-1.20-29-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            mix-${{ runner.os }}-1.20-29-
+
+      - run: mix deps.get
+
+      - name: Run full suite including layers 3-4
+        run: mix test --include postgres --include integration
