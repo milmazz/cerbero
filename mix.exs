@@ -1,15 +1,21 @@
 defmodule Cerbero.MixProject do
   use Mix.Project
 
+  @version "0.1.0"
+  @source_url "https://github.com/milmazz/cerbero"
+
   def project do
     [
       app: :cerbero,
-      version: "0.1.0",
+      version: @version,
       elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
       test_ignore_filters: [~r{^test/fixtures/}],
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      description: description(),
+      package: package(),
+      source_url: @source_url,
       docs: docs()
     ]
   end
@@ -30,10 +36,27 @@ defmodule Cerbero.MixProject do
     ]
   end
 
+  defp description do
+    "Offline safety checks for Ecto migrations, judged against a committed " <>
+      "snapshot of production database catalog metadata (PostgreSQL and CockroachDB)."
+  end
+
+  defp package do
+    [
+      licenses: ["Apache-2.0"],
+      links: %{
+        "GitHub" => @source_url,
+        "Changelog" => @source_url <> "/blob/main/CHANGELOG.md"
+      },
+      files: ~w(lib mix.exs README.md LICENSE CHANGELOG.md .formatter.exs)
+    ]
+  end
+
   defp docs do
     [
       main: "readme",
-      extras: ["README.md"]
+      source_ref: "v#{@version}",
+      extras: ["README.md", "CHANGELOG.md", "CONTRIBUTING.md", "SECURITY.md"]
     ]
   end
 end
