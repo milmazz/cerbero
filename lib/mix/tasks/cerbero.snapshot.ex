@@ -2,8 +2,8 @@ defmodule Mix.Tasks.Cerbero.Snapshot do
   @shortdoc "Export a cerbero catalog snapshot from a database"
   @moduledoc """
   See `Cerbero.CLI.Snapshot` for flags: `--url`, `--out`, `--emit-sql`,
-  `--from-file`, `--migration-source`. Exit codes: 0 success, 2 operational
-  error.
+  `--engine`, `--from-file`, `--migration-source`. Exit codes: 0 success,
+  2 operational error.
   """
   use Mix.Task
 

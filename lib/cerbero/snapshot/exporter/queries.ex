@@ -232,19 +232,35 @@ defmodule Cerbero.Snapshot.Exporter.Queries do
     GROUP BY 1, 2
     """
 
-  @doc "All (name, sql) pairs the --emit-sql script includes, in order."
-  def emit_list do
+  @doc """
+  All (name, sql) pairs the --emit-sql script includes, in order. The
+  engine argument selects the engine-branched queries and, for
+  CockroachDB, appends the crdb-only sections; `from_file` detects the
+  engine by the presence of the `crdb_version` section, so the two
+  scripts stay self-describing.
+  """
+  def emit_list(engine \\ "postgres") do
     [
       {"version", version()},
       {"server_version_num", server_version_num()},
       {"current_database", current_database()},
       {"standby", standby()},
       {"stats_reset", stats_reset()},
-      {"tables", String.replace(tables(), "ANY($1)", "ANY(ARRAY['public'])")},
+      {"tables", String.replace(tables(engine), "ANY($1)", "ANY(ARRAY['public'])")},
       {"columns", String.replace(columns(), "ANY($1)", "ANY(ARRAY['public'])")},
-      {"indexes", String.replace(indexes(), "ANY($1)", "ANY(ARRAY['public'])")},
+      {"indexes", String.replace(indexes(engine), "ANY($1)", "ANY(ARRAY['public'])")},
       {"constraints", String.replace(constraints(), "ANY($1)", "ANY(ARRAY['public'])")},
       {"applied_migrations", applied_migrations("schema_migrations")}
+    ] ++ crdb_emit_sections(engine)
+  end
+
+  defp crdb_emit_sections("cockroachdb") do
+    [
+      {"crdb_version", crdb_version()},
+      {"crdb_row_counts", crdb_row_counts()},
+      {"crdb_stats_times", String.replace(crdb_stats_times(), "ANY($1)", "ANY(ARRAY['public'])")}
     ]
   end
+
+  defp crdb_emit_sections(_postgres), do: []
 end

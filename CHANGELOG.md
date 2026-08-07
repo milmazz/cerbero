@@ -82,6 +82,12 @@ It does not certify migrations as safe; it judges the statement, not the moment.
   code-scanning annotations. Findings map `error`/`warning`/`note` from their
   severities; global snapshot-health findings anchor to the committed snapshot
   file so they still surface in PR review.
+- CRDB support for the DBA path: `mix cerbero.snapshot --emit-sql --engine
+  cockroachdb` emits a CRDB-branched script (CRDB speaks pgwire and supports
+  the same `COPY (SELECT row_to_json(...)) TO STDOUT` mechanism, verified on
+  v25.1), and `--from-file` detects the engine from the file's own sections —
+  including the crdb row-count and stats-timestamp sections — with no
+  out-of-band flag.
 - Layer-4 lock verification now asserts the mapped lock is the *strongest*
   mode held on the target relation, not merely among the held modes, so an
   over-locking regression can no longer hide behind a weaker mapped entry.

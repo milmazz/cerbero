@@ -363,10 +363,16 @@ defmodule Cerbero.Snapshot.Exporter do
 
   # --- DBA path ------------------------------------------------------------
 
-  @doc "A psql script: each query wrapped so output is JSON-lines per section."
-  @spec emit_sql() :: String.t()
-  def emit_sql do
-    Queries.emit_list()
+  @doc """
+  A psql script: each query wrapped so output is JSON-lines per section.
+  Works against both engines — CRDB speaks pgwire and supports
+  `COPY (SELECT row_to_json(...)) TO STDOUT` (verified on v25.1), so the
+  same psql mechanism serves the DBA path there with the CRDB-branched
+  section list.
+  """
+  @spec emit_sql(String.t()) :: String.t()
+  def emit_sql(engine \\ "postgres") do
+    Queries.emit_list(engine)
     |> Enum.map_join("\n", fn {name, sql} ->
       one_line = sql |> String.trim() |> String.trim_trailing(";")
 
@@ -422,19 +428,50 @@ defmodule Cerbero.Snapshot.Exporter do
   # (single column, possibly no alias) are read by value instead of by
   # key, since the auto-derived JSON key for an unaliased expression is
   # an implementation detail of the server's column-naming rules, not
-  # part of this contract. PG only in v1 (CRDB DBA path is via the mix
-  # task against a live connection).
+  # part of this contract. Engine is detected from the file itself: the
+  # CRDB script includes a crdb_version section (see Queries.emit_list/1),
+  # so a DBA-returned file never needs an out-of-band engine flag.
   defp build_from_sections(sections, clock) do
-    server_version_num = scalar(sections["server_version_num"])
     database = scalar(sections["current_database"])
     standby = scalar(sections["standby"])
     stats_reset = sections["stats_reset"] |> scalar() |> parse_ts()
 
-    engine = %{
-      "name" => "postgres",
-      "version" => "#{div(server_version_num, 10_000)}.#{rem(server_version_num, 10_000)}",
-      "version_num" => server_version_num
-    }
+    engine =
+      case scalar(sections["crdb_version"]) do
+        nil ->
+          server_version_num = scalar(sections["server_version_num"])
+
+          %{
+            "name" => "postgres",
+            "version" => "#{div(server_version_num, 10_000)}.#{rem(server_version_num, 10_000)}",
+            "version_num" => server_version_num
+          }
+
+        crdb_version ->
+          %{
+            "name" => "cockroachdb",
+            "version" => crdb_version,
+            "version_num" => crdb_version_num(crdb_version)
+          }
+      end
+
+    crdb_row_counts =
+      (sections["crdb_row_counts"] || [])
+      |> Map.new(fn m ->
+        # Same 0-means-no-signal mapping as the live path (see
+        # crdb_row_counts/2): never forward a fabricated zero.
+        case m["estimated_row_count"] do
+          0 -> {m["table_name"], nil}
+          count -> {m["table_name"], count}
+        end
+      end)
+
+    crdb_stats_times =
+      (sections["crdb_stats_times"] || [])
+      |> Map.new(fn m ->
+        {{m["schema_name"], m["name"]},
+         {parse_ts(m["manual_created"]), parse_ts(m["auto_created"])}}
+      end)
 
     tables = Enum.map(sections["tables"] || [], &table_row/1)
     columns = Enum.map(sections["columns"] || [], &column_row/1)
@@ -458,7 +495,8 @@ defmodule Cerbero.Snapshot.Exporter do
        "standby" => standby,
        "stats_provenance" => if(standby, do: "standby", else: "primary"),
        "stats_reset" => stats_reset && DateTime.to_iso8601(stats_reset),
-       "tables" => assemble_tables(tables, columns, indexes, constraints)
+       "tables" =>
+         assemble_tables(tables, columns, indexes, constraints, crdb_row_counts, crdb_stats_times)
      }}
   end
 

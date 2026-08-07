@@ -158,6 +158,77 @@ defmodule Cerbero.Integration.CRDBTest do
     assert %DateTime{} = t.last_analyze
   end
 
+  @tag :tmp_dir
+  test "the CRDB emit-sql script and from-file rebuild a decodable CRDB snapshot",
+       %{tmp_dir: tmp_dir, conn: conn} do
+    # Own statistics, not another test's leftovers (test order is
+    # shuffled): proves the crdb_stats_times section flows through the
+    # DBA path into last_analyze, same as the live path.
+    Postgrex.query!(conn, "CREATE STATISTICS cerbero_dba_orgs_stats FROM orgs", [])
+
+    script = Path.join(tmp_dir, "cerbero_export_crdb.sql")
+    output = Path.join(tmp_dir, "cerbero_export_crdb.out")
+    File.write!(script, Exporter.emit_sql("cockroachdb"))
+
+    run_psql_script(script, output)
+
+    assert {:ok, raw} = Exporter.from_file(output)
+    assert raw["engine"]["name"] == "cockroachdb"
+    assert {:ok, snapshot} = Snapshot.decode(Snapshot.stamp(raw))
+    assert snapshot.engine.name == :cockroachdb
+
+    orgs = Enum.find(snapshot.tables, &(&1.name == "orgs"))
+    assert orgs, "orgs table missing from DBA-path snapshot"
+    assert Enum.any?(orgs.columns, &(&1.name == "id"))
+    assert %DateTime{} = orgs.last_analyze
+
+    # Same engine identity as the live path sees it.
+    assert {:ok, live} = Exporter.export(@url)
+    assert live["engine"] == raw["engine"]
+  end
+
+  # Same host-psql-or-docker fallback as the PG exporter integration test,
+  # pointed at the crdb service (the cockroach image ships no psql, so the
+  # docker leg borrows pg16's).
+  defp run_psql_script(script, output) do
+    if System.find_executable("psql") do
+      {_, 0} =
+        System.cmd("psql", [@url, "--no-psqlrc", "--tuples-only", "-f", script],
+          into: File.stream!(output),
+          stderr_to_stdout: false
+        )
+    else
+      container_script = "/tmp/cerbero_export_crdb.sql"
+
+      {_, 0} =
+        System.cmd(
+          "docker",
+          ["compose", "-f", "docker-compose.test.yml", "cp", script, "pg16:#{container_script}"]
+        )
+
+      {_, 0} =
+        System.cmd(
+          "docker",
+          [
+            "compose",
+            "-f",
+            "docker-compose.test.yml",
+            "exec",
+            "-T",
+            "pg16",
+            "psql",
+            "postgresql://root@crdb:26257/defaultdb?sslmode=disable",
+            "--no-psqlrc",
+            "--tuples-only",
+            "-f",
+            container_script
+          ],
+          into: File.stream!(output),
+          stderr_to_stdout: false
+        )
+    end
+  end
+
   test "the limitation table's surviving fact: a column a generated column depends on can't change type",
        %{conn: conn} do
     Postgrex.query!(

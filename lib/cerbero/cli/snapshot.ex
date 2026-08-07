@@ -1,7 +1,9 @@
 defmodule Cerbero.CLI.Snapshot do
   @moduledoc """
   argv for mix cerbero.snapshot: --url | --emit-sql | --from-file, --out,
-  --config, --migration-source, --precision.
+  --config, --migration-source, --precision, --engine (postgres |
+  cockroachdb; steers --emit-sql only — the live path detects the engine
+  from the connection and --from-file from the file's own sections).
 
   Loads `.cerbero.exs` (or the path given via `--config`) the same way
   `mix cerbero.check` does, so `config.schemas` governs which schemas the
@@ -20,6 +22,7 @@ defmodule Cerbero.CLI.Snapshot do
     out: :string,
     config: :string,
     emit_sql: :boolean,
+    engine: :string,
     from_file: :string,
     migration_source: :string,
     precision: :string
@@ -33,10 +36,22 @@ defmodule Cerbero.CLI.Snapshot do
     out = parsed[:out] || "priv/repo/cerbero_snapshot.json"
 
     with {:ok, config} <- Config.load(parsed[:config] || ".cerbero.exs"),
-         {:ok, precision} <- precision(parsed, config) do
-      do_run(parsed, config, precision, out, clock, io)
+         {:ok, precision} <- precision(parsed, config),
+         {:ok, engine} <- engine(parsed) do
+      do_run(parsed, config, precision, engine, out, clock, io)
     else
       {:error, reason} -> error(io, reason)
+    end
+  end
+
+  # --engine only steers --emit-sql (the live path detects the engine from
+  # the connection; --from-file detects it from the file's own sections).
+  defp engine(parsed) do
+    case parsed[:engine] do
+      nil -> {:ok, "postgres"}
+      "postgres" -> {:ok, "postgres"}
+      "cockroachdb" -> {:ok, "cockroachdb"}
+      other -> {:error, "invalid --engine: #{other} (postgres | cockroachdb)"}
     end
   end
 
@@ -49,11 +64,11 @@ defmodule Cerbero.CLI.Snapshot do
     end
   end
 
-  defp do_run(parsed, config, precision, out, clock, io) do
+  defp do_run(parsed, config, precision, engine, out, clock, io) do
     result =
       cond do
         parsed[:emit_sql] ->
-          {:emit, Exporter.emit_sql()}
+          {:emit, Exporter.emit_sql(engine)}
 
         parsed[:from_file] ->
           Exporter.from_file(parsed[:from_file], clock: clock, precision: precision)

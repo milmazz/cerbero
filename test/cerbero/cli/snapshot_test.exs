@@ -45,6 +45,28 @@ defmodule Cerbero.CLI.SnapshotTest do
     assert output =~ "one of --url, --emit-sql, --from-file is required"
   end
 
+  test "--emit-sql --engine cockroachdb emits the CRDB script" do
+    {code, output} = run(["--emit-sql", "--engine", "cockroachdb"])
+
+    assert code == 0
+    assert output =~ "cerbero:begin:crdb_version"
+    assert output =~ "cerbero:begin:crdb_row_counts"
+  end
+
+  test "--emit-sql without --engine emits the PG script (no CRDB sections)" do
+    {code, output} = run(["--emit-sql"])
+
+    assert code == 0
+    refute output =~ "crdb_version"
+  end
+
+  test "an invalid --engine value is exit 2" do
+    {code, output} = run(["--emit-sql", "--engine", "oracle"])
+
+    assert code == 2
+    assert output =~ "invalid --engine"
+  end
+
   test "an invalid --precision value is exit 2, before attempting any export" do
     {code, output} = run(["--precision", "fuzzy", "--url", "postgres://unreachable/db"])
 
