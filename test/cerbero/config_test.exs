@@ -1,3 +1,13 @@
+defmodule Cerbero.ConfigTest.NoopCheck do
+  @behaviour Cerbero.Check
+
+  @impl true
+  def id, do: :noop_check
+
+  @impl true
+  def run(_migration, _catalog, _config), do: []
+end
+
 defmodule Cerbero.ConfigTest do
   use ExUnit.Case, async: true
 
@@ -19,23 +29,55 @@ defmodule Cerbero.ConfigTest do
     assert c.lock_timeout_attested == false
     assert c.strict_concurrent_index == false
     assert c.start_after == nil
+    assert c.extra_checks == []
     assert c.precision == :exact
     assert c.schemas == ["public"]
     assert c.migrations_paths == ["priv/repo/migrations"]
     assert c.snapshot_path == "priv/repo/cerbero_snapshot.json"
   end
 
-  test "loads overrides from a .cerbero.exs keyword list" do
-    path = Path.join(System.tmp_dir!(), ".cerbero.exs")
+  @tag :tmp_dir
+  test "loads overrides from a .cerbero.exs keyword list", %{tmp_dir: tmp_dir} do
+    path = Path.join(tmp_dir, ".cerbero.exs")
     File.write!(path, "[rows_error: 5_000_000, lock_timeout_attested: true]")
-    on_exit(fn -> File.rm(path) end)
     assert {:ok, %Config{rows_error: 5_000_000, lock_timeout_attested: true}} = Config.load(path)
   end
 
-  test "unknown keys are a bad_config error, not a crash" do
-    path = Path.join(System.tmp_dir!(), ".cerbero_bad.exs")
+  @tag :tmp_dir
+  test "extra_checks accepts modules implementing the Cerbero.Check behaviour", %{
+    tmp_dir: tmp_dir
+  } do
+    path = Path.join(tmp_dir, ".cerbero.exs")
+    File.write!(path, "[extra_checks: [Cerbero.ConfigTest.NoopCheck]]")
+
+    assert {:ok, %Config{extra_checks: [Cerbero.ConfigTest.NoopCheck]}} = Config.load(path)
+  end
+
+  @tag :tmp_dir
+  test "extra_checks entry not implementing the behaviour is a bad_config error", %{
+    tmp_dir: tmp_dir
+  } do
+    path = Path.join(tmp_dir, ".cerbero.exs")
+    File.write!(path, "[extra_checks: [String]]")
+
+    assert {:error, {:bad_config, msg}} = Config.load(path)
+    assert msg =~ "String"
+    assert msg =~ "Cerbero.Check"
+  end
+
+  @tag :tmp_dir
+  test "extra_checks that is not a list is a bad_config error", %{tmp_dir: tmp_dir} do
+    path = Path.join(tmp_dir, ".cerbero.exs")
+    File.write!(path, "[extra_checks: Cerbero.ConfigTest.NoopCheck]")
+
+    assert {:error, {:bad_config, msg}} = Config.load(path)
+    assert msg =~ "list"
+  end
+
+  @tag :tmp_dir
+  test "unknown keys are a bad_config error, not a crash", %{tmp_dir: tmp_dir} do
+    path = Path.join(tmp_dir, ".cerbero.exs")
     File.write!(path, "[rows_eror: 5]")
-    on_exit(fn -> File.rm(path) end)
     assert {:error, {:bad_config, msg}} = Config.load(path)
     assert msg =~ "rows_eror"
   end

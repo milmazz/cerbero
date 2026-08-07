@@ -32,6 +32,12 @@ defmodule Cerbero.Check.Runner do
 
   @spec run([Migration.t()], Catalog.t(), Config.t(), [module()]) :: {[Finding.t()], Catalog.t()}
   def run(pending, %Catalog{} = catalog, %Config{} = config, checks \\ default_checks()) do
+    # Third-party checks registered via extra_checks (validated against the
+    # Cerbero.Check behaviour at config load) run after the given checks;
+    # a builtin listed there is not run twice. Registration is additive
+    # only — disabling a builtin goes through skip_checks, never here.
+    checks = checks ++ (config.extra_checks -- checks)
+
     {findings, final_catalog} =
       Enum.map_reduce(pending, catalog, fn migration, cat ->
         findings =

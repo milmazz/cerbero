@@ -13,10 +13,10 @@ defmodule Cerbero.CLI.SnapshotTest do
     {code, output}
   end
 
-  test "a bad .cerbero.exs config is exit 2, before attempting any export" do
-    path = Path.join(System.tmp_dir!(), "cerbero_bad_snapshot_config.exs")
+  @tag :tmp_dir
+  test "a bad .cerbero.exs config is exit 2, before attempting any export", %{tmp_dir: tmp_dir} do
+    path = Path.join(tmp_dir, ".cerbero.exs")
     File.write!(path, "[schemaz: [\"public\"]]")
-    on_exit(fn -> File.rm(path) end)
 
     {code, output} = run(["--config", path, "--url", "postgres://unreachable/db"])
 
@@ -25,10 +25,12 @@ defmodule Cerbero.CLI.SnapshotTest do
     assert output =~ "schemaz"
   end
 
-  test "a valid config with a schemas list loads; falls through to the missing-source error" do
-    path = Path.join(System.tmp_dir!(), "cerbero_valid_snapshot_config.exs")
+  @tag :tmp_dir
+  test "a valid config with a schemas list loads; falls through to the missing-source error", %{
+    tmp_dir: tmp_dir
+  } do
+    path = Path.join(tmp_dir, ".cerbero.exs")
     File.write!(path, ~s([schemas: ["public", "app"]]))
-    on_exit(fn -> File.rm(path) end)
 
     {code, output} = run(["--config", path])
 
@@ -51,7 +53,10 @@ defmodule Cerbero.CLI.SnapshotTest do
   end
 
   @tag :postgres
-  test "config.schemas is threaded through to the exporter, not hardcoded to public" do
+  @tag :tmp_dir
+  test "config.schemas is threaded through to the exporter, not hardcoded to public", %{
+    tmp_dir: tmp_dir
+  } do
     connect_opts =
       @url
       |> Ecto.Repo.Supervisor.parse_url()
@@ -67,14 +72,9 @@ defmodule Cerbero.CLI.SnapshotTest do
       []
     )
 
-    config_path = Path.join(System.tmp_dir!(), "cerbero_schemas_config.exs")
+    config_path = Path.join(tmp_dir, "cerbero_schemas_config.exs")
     File.write!(config_path, ~s([schemas: ["public", "cerbero_schemas_test"]]))
-    out_path = Path.join(System.tmp_dir!(), "cerbero_schemas_snapshot.json")
-
-    on_exit(fn ->
-      File.rm(config_path)
-      File.rm(out_path)
-    end)
+    out_path = Path.join(tmp_dir, "cerbero_schemas_snapshot.json")
 
     {code, _output} = run(["--url", @url, "--config", config_path, "--out", out_path])
     assert code == 0
@@ -87,14 +87,9 @@ defmodule Cerbero.CLI.SnapshotTest do
            )
 
     # Control: the default config (schemas: ["public"]) must NOT pick it up.
-    default_config_path = Path.join(System.tmp_dir!(), "cerbero_default_schemas_config.exs")
+    default_config_path = Path.join(tmp_dir, "cerbero_default_schemas_config.exs")
     File.write!(default_config_path, "[]")
-    default_out_path = Path.join(System.tmp_dir!(), "cerbero_default_schemas_snapshot.json")
-
-    on_exit(fn ->
-      File.rm(default_config_path)
-      File.rm(default_out_path)
-    end)
+    default_out_path = Path.join(tmp_dir, "cerbero_default_schemas_snapshot.json")
 
     {0, _} = run(["--url", @url, "--config", default_config_path, "--out", default_out_path])
     assert {:ok, default_snapshot} = SnapshotArtifact.load(default_out_path)

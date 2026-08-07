@@ -122,10 +122,12 @@ defmodule Cerbero.CLI.CheckTest do
     assert output =~ "no snapshot: structural checks only, scale unknown"
   end
 
-  test "empty migrations_paths in config and no --migrations flag is exit 2, not a crash" do
-    path = Path.join(System.tmp_dir!(), ".cerbero_empty_migrations.exs")
+  @tag :tmp_dir
+  test "empty migrations_paths in config and no --migrations flag is exit 2, not a crash", %{
+    tmp_dir: tmp_dir
+  } do
+    path = Path.join(tmp_dir, ".cerbero.exs")
     File.write!(path, "[migrations_paths: []]")
-    on_exit(fn -> File.rm(path) end)
 
     {code, output} = run(["--config", path])
 
@@ -141,31 +143,27 @@ defmodule Cerbero.CLI.CheckTest do
     assert output =~ "migrations directory not found: no/such/dir"
   end
 
-  test "an existing but empty migrations directory is a valid 0-pending case" do
-    dir =
-      Path.join(
-        System.tmp_dir!(),
-        "cerbero_empty_migrations_#{System.unique_integer([:positive])}"
-      )
-
-    File.mkdir_p!(dir)
-    on_exit(fn -> File.rm_rf(dir) end)
-
+  @tag :tmp_dir
+  test "an existing but empty migrations directory is a valid 0-pending case", %{
+    tmp_dir: tmp_dir
+  } do
     {code, _output} =
-      run(["--snapshot", @snapshot, "--migrations", dir, "--config", "nonexistent"])
+      run(["--snapshot", @snapshot, "--migrations", tmp_dir, "--config", "nonexistent"])
 
     assert code == 0
   end
 
-  test "a snapshot from an unsupported engine version is exit 2 (operational)" do
+  @tag :tmp_dir
+  test "a snapshot from an unsupported engine version is exit 2 (operational)", %{
+    tmp_dir: tmp_dir
+  } do
     raw =
       Cerbero.Test.SnapshotBuilder.build(%{
         "engine" => %{"name" => "postgres", "version" => "12.9", "version_num" => 120_000}
       })
 
-    path = Path.join(System.tmp_dir!(), "old_engine_snapshot.json")
+    path = Path.join(tmp_dir, "old_engine_snapshot.json")
     Cerbero.Snapshot.write!(raw, path)
-    on_exit(fn -> File.rm(path) end)
 
     {code, output} =
       run(["--snapshot", path, "--migrations", @migrations, "--config", "nonexistent"])
@@ -174,7 +172,8 @@ defmodule Cerbero.CLI.CheckTest do
     assert output =~ "PostgreSQL >= 13"
   end
 
-  test "an order-of-magnitude snapshot annotates the summary line" do
+  @tag :tmp_dir
+  test "an order-of-magnitude snapshot annotates the summary line", %{tmp_dir: tmp_dir} do
     raw =
       Cerbero.Test.SnapshotBuilder.build(%{
         "format_version" => 2,
@@ -182,9 +181,8 @@ defmodule Cerbero.CLI.CheckTest do
         "collected_at" => "2026-07-01T00:00:00Z"
       })
 
-    path = Path.join(System.tmp_dir!(), "bucketed_snapshot.json")
+    path = Path.join(tmp_dir, "bucketed_snapshot.json")
     Cerbero.Snapshot.write!(raw, path)
-    on_exit(fn -> File.rm(path) end)
 
     {code, output} =
       run(["--snapshot", path, "--migrations", @migrations, "--config", "nonexistent"])
