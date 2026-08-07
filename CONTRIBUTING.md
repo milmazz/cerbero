@@ -76,7 +76,8 @@ mix docs   # zero warnings
 The suite is layered (see the design doc in `docs/design/`):
 
 - **Layer 0/1** — pure unit and fixture-based rule tests
-  (`Cerbero.Test.SnapshotBuilder`, `Cerbero.Test.RuleCase`).
+  (the helpers in `test/support/snapshot_builder.ex` and
+  `test/support/rule_case.ex`).
 - **Layer 2** — golden CLI output, byte-compared. Regenerate with
   `UPDATE_GOLDEN=1 mix test`, then *read the diff* before committing it.
 - **Layer 3** (`@tag :postgres`) — exporter against live PostgreSQL.

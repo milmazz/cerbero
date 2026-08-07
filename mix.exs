@@ -32,7 +32,7 @@ defmodule Cerbero.MixProject do
       {:ecto_sql, "~> 3.12"},
       {:postgrex, "~> 0.19"},
       {:stream_data, "~> 1.1", only: [:test, :dev]},
-      {:ex_doc, "~> 0.34", only: :dev, runtime: false}
+      {:ex_doc, "~> 0.34", only: [:dev, :test], runtime: false}
     ]
   end
 
@@ -56,7 +56,12 @@ defmodule Cerbero.MixProject do
     [
       main: "readme",
       source_ref: "v#{@version}",
-      extras: ["README.md", "CHANGELOG.md", "CONTRIBUTING.md", "SECURITY.md"]
+      extras: ["README.md", "CHANGELOG.md", "CONTRIBUTING.md", "SECURITY.md"],
+      # In MIX_ENV=test (the CI docs gate), test/support helpers are
+      # compiled too — keep them out of the doc set in every environment.
+      filter_modules: fn mod, _meta ->
+        not String.starts_with?(inspect(mod), "Cerbero.Test")
+      end
     ]
   end
 end
