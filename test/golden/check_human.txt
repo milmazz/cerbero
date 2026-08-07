@@ -1,6 +1,7 @@
 cerbero: judged against snapshot of app_prod, 2026-07-01, 12 days old
 
-test/fixtures/migrations/unsafe/20260801000000_add_events_payload_index.exs
-  [error] unsafe_index_creation: SHARE lock blocks writes on public.events (~412M rows, stats 2026-07-01) for a full-table scan; use concurrently: true with @disable_ddl_transaction and @disable_migration_lock (test/fixtures/migrations/unsafe/20260801000000_add_events_payload_index.exs:5)
+✖ 1 error — fix before deploy
+  unsafe_index_creation  test/fixtures/migrations/unsafe/20260801000000_add_events_payload_index.exs:5
+    SHARE lock blocks writes on public.events (~412M rows, stats 2026-07-01) for a full-table scan; use concurrently: true with @disable_ddl_transaction and @disable_migration_lock
 
 1 finding(s) (1 error, 0 warning)

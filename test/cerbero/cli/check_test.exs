@@ -44,6 +44,12 @@ defmodule Cerbero.CLI.CheckTest do
   end
 
   test "human output matches golden byte-for-byte" do
+    # Force color off so the golden is stable whether or not the test runner
+    # is attached to a TTY; the formatter emits ANSI only when enabled.
+    previous = Application.get_env(:elixir, :ansi_enabled, false)
+    Application.put_env(:elixir, :ansi_enabled, false)
+    on_exit(fn -> Application.put_env(:elixir, :ansi_enabled, previous) end)
+
     {_code, output} =
       run(["--snapshot", @snapshot, "--migrations", @migrations, "--config", "nonexistent"])
 
