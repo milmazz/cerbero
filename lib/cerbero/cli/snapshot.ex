@@ -12,6 +12,9 @@ defmodule Cerbero.CLI.Snapshot do
   (`--precision exact|order_of_magnitude` overrides it). A bad config or an
   invalid precision is an operational error (exit 2), same category as an
   unreachable database.
+
+  `--out` defaults to `config.snapshot_path`, so the exported snapshot lands
+  exactly where `mix cerbero.check` reads it.
   """
 
   alias Cerbero.{Config, Snapshot}
@@ -35,7 +38,6 @@ defmodule Cerbero.CLI.Snapshot do
     io = Keyword.get(opts, :io, :stdio)
     clock = Keyword.get(opts, :clock, &DateTime.utc_now/0)
     {parsed, _, _} = OptionParser.parse(argv, strict: @switches)
-    out = parsed[:out] || "priv/repo/cerbero_snapshot.json"
 
     case parsed[:gen_signing_key] do
       nil ->
@@ -43,6 +45,9 @@ defmodule Cerbero.CLI.Snapshot do
              {:ok, precision} <- precision(parsed, config),
              {:ok, engine} <- engine(parsed),
              {:ok, sign_seed} <- sign_seed(parsed) do
+          # --out wins; otherwise write where mix cerbero.check reads
+          # (config.snapshot_path), so the two tasks always agree.
+          out = parsed[:out] || config.snapshot_path
           do_run(parsed, config, precision, engine, sign_seed, out, clock, io)
         else
           {:error, reason} -> error(io, reason)

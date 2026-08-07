@@ -203,8 +203,8 @@ defmodule Cerbero.Snapshot.Exporter do
          columns,
          indexes,
          constraints,
-         crdb_row_counts \\ %{},
-         crdb_stats_times \\ %{}
+         crdb_row_counts,
+         crdb_stats_times
        ) do
     col_by = Enum.group_by(columns, fn [schema, table | _] -> {schema, table} end)
     idx_by = Enum.group_by(indexes, fn [schema, table | _] -> {schema, table} end)

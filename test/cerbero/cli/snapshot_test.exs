@@ -141,4 +141,22 @@ defmodule Cerbero.CLI.SnapshotTest do
     assert {:ok, default_snapshot} = SnapshotArtifact.load(default_out_path)
     refute Enum.any?(default_snapshot.tables, &(&1.schema == "cerbero_schemas_test"))
   end
+
+  @tag :postgres
+  @tag :tmp_dir
+  test "no --out writes to config.snapshot_path (where mix cerbero.check reads)", %{
+    tmp_dir: tmp_dir
+  } do
+    snapshot_path = Path.join(tmp_dir, "nested/dir/cerbero_snapshot.json")
+    File.mkdir_p!(Path.dirname(snapshot_path))
+
+    config_path = Path.join(tmp_dir, "cerbero_out_config.exs")
+    File.write!(config_path, ~s([snapshot_path: "#{snapshot_path}"]))
+
+    {code, output} = run(["--url", @url, "--config", config_path])
+
+    assert code == 0
+    assert output =~ "wrote #{snapshot_path}"
+    assert {:ok, _snapshot} = SnapshotArtifact.load(snapshot_path)
+  end
 end
