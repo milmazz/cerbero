@@ -22,6 +22,8 @@ defmodule Cerbero.Snapshot do
     :raw
   ]
 
+  @type t :: %__MODULE__{}
+
   defmodule Table do
     defstruct [
       :schema,
@@ -44,6 +46,8 @@ defmodule Cerbero.Snapshot do
       :indexes,
       :constraints
     ]
+
+    @type t :: %__MODULE__{}
   end
 
   @format_version 1

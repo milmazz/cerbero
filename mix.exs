@@ -9,7 +9,8 @@ defmodule Cerbero.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       test_ignore_filters: [~r{^test/fixtures/}],
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      docs: docs()
     ]
   end
 
@@ -24,7 +25,15 @@ defmodule Cerbero.MixProject do
     [
       {:ecto_sql, "~> 3.12"},
       {:postgrex, "~> 0.19"},
-      {:stream_data, "~> 1.1", only: [:test, :dev]}
+      {:stream_data, "~> 1.1", only: [:test, :dev]},
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false}
+    ]
+  end
+
+  defp docs do
+    [
+      main: "readme",
+      extras: ["README.md"]
     ]
   end
 end
