@@ -155,4 +155,45 @@ defmodule Cerbero.Check.ColumnTypeChangeTest do
 
     assert msg =~ "restricted"
   end
+
+  test "CRDB: a separate stored generated column in the table names the 2BP01 rejection" do
+    crdb = %{"engine" => %{"name" => "cockroachdb", "version" => "25.1", "version_num" => 25_100}}
+
+    t =
+      table("events", %{
+        "columns" => [
+          column("id", %{"type" => "integer"}),
+          column("id_text", %{"type" => "text", "generated" => "stored"})
+        ]
+      })
+
+    assert [%Finding{severity: :warning, message: msg}] =
+             judge_rule(
+               [t],
+               "alter table(:events) do\n modify :id, :bigint\n end",
+               snapshot: crdb
+             )
+
+    assert msg =~ "2BP01"
+    assert msg =~ "id_text"
+  end
+
+  test "CRDB: the modified column being generated itself does not trigger the 2BP01 message" do
+    crdb = %{"engine" => %{"name" => "cockroachdb", "version" => "25.1", "version_num" => 25_100}}
+
+    t =
+      table("events", %{
+        "columns" => [column("id_text", %{"type" => "text", "generated" => "stored"})]
+      })
+
+    assert [%Finding{severity: :warning, message: msg}] =
+             judge_rule(
+               [t],
+               "alter table(:events) do\n modify :id_text, :string, size: 64\n end",
+               snapshot: crdb
+             )
+
+    refute msg =~ "2BP01"
+    assert msg =~ "restricted"
+  end
 end

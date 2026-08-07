@@ -82,6 +82,10 @@ It does not certify migrations as safe; it judges the statement, not the moment.
   code-scanning annotations. Findings map `error`/`warning`/`note` from their
   severities; global snapshot-health findings anchor to the committed snapshot
   file so they still surface in PR review.
+- CRDB type changes now name the real remaining rejection: when the table has
+  a separate `GENERATED ... STORED` column, the warning cites the
+  dependent-generated-column mechanism (SQLSTATE 2BP01) and its drop/re-add
+  remediation instead of only the generic transaction restriction.
 - `mix cerbero.gen.config` — writes a `.cerbero.exs` populated with the
   built-in defaults, every setting visible and commented; deleting a line
   falls back to the same default. Refuses to overwrite without `--force`.

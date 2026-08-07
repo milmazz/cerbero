@@ -23,10 +23,11 @@ defmodule Cerbero.DDL.CRDB do
   # reproducibly fails is different from all of those: a column type
   # cannot be changed while some *other*, separate computed/generated
   # column in the table depends on it ("cannot alter type of column ...
-  # because computed column ... depends on it", SQLSTATE 2BP01) — not
-  # detected by this class name at all today. Downgraded to `:limited`
+  # because computed column ... depends on it", SQLSTATE 2BP01) — the
+  # call site's `generated_siblings/3` scan names that mechanism when the
+  # snapshot shows a candidate column. Downgraded to `:limited`
   # rather than deleted: the sole call site
-  # (`Cerbero.Check.ColumnTypeChange.crdb_judge/5`) previously branched
+  # (`Cerbero.Check.ColumnTypeChange.crdb_judge/6`) previously branched
   # on `{:rejected, _}` vs. everything else, and its `_` branch already
   # emitted an accurate, still-true :warning (ALTER COLUMN TYPE can't run
   # inside an explicit multi-statement transaction on CRDB) — this

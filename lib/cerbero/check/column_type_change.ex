@@ -14,9 +14,11 @@ defmodule Cerbero.Check.ColumnTypeChange do
   `{:rejected, _}` clause as unreachable once `Cerbero.DDL.CRDB.judge/2`'s
   data was corrected) and has been removed along with the now-unused
   `indexed?`/`constrained?`/`generated_stored?` detection. See the
-  comment on that `judge/2` clause for the full evidence and the one case
+  comment on that `judge/2` clause for the full evidence. The one case
   that *does* still reject (a separate generated column elsewhere in the
-  table depending on this one) — not currently distinguished here.
+  table depending on this one, SQLSTATE 2BP01) is distinguished here by
+  `generated_siblings/3` — to the extent the snapshot allows: it records
+  which columns are generated, not their expressions.
   """
   @behaviour Cerbero.Check
 
@@ -85,7 +87,7 @@ defmodule Cerbero.Check.ColumnTypeChange do
     qualified = Catalog.qualify(table)
 
     if catalog.engine == :cockroachdb do
-      crdb_judge(qualified, col, line, migration, catalog)
+      crdb_judge(table, qualified, col, line, migration, catalog)
     else
       scale = Catalog.scale(catalog, table)
       traffic = Catalog.traffic(catalog, table, config)
@@ -118,7 +120,7 @@ defmodule Cerbero.Check.ColumnTypeChange do
     end
   end
 
-  defp crdb_judge(qualified, col, line, migration, catalog) do
+  defp crdb_judge(table, qualified, col, line, migration, catalog) do
     # `CRDB.judge(:alter_column_type_indexed, _)` currently always
     # returns `{:limited, _}` (see its comment for the layer 4 evidence)
     # — matching that shape rather than discarding the call keeps this
@@ -128,18 +130,37 @@ defmodule Cerbero.Check.ColumnTypeChange do
     # branch again" rather than a silent no-op.
     {:limited, _note} = CRDB.judge(:alter_column_type_indexed, catalog.version_num)
 
+    message =
+      case generated_siblings(catalog, table, col) do
+        [] ->
+          "#{qualified}.#{col}: ALTER COLUMN TYPE on CockroachDB is restricted " <>
+            "(cannot run inside a transaction with other statements)"
+
+        names ->
+          # The snapshot records which columns are GENERATED ... STORED but
+          # not their expressions, so "references #{col}" can't be proven
+          # offline — name the mechanism and the candidates instead of
+          # guessing.
+          "#{qualified}.#{col}: CockroachDB rejects ALTER COLUMN TYPE while a separate " <>
+            "generated column depends on the column (SQLSTATE 2BP01) — #{qualified} has " <>
+            "generated column(s) #{Enum.join(names, ", ")}; if any references #{col}, drop " <>
+            "the generated column, change the type, then re-add it. The change is also " <>
+            "restricted (cannot run inside a transaction with other statements)"
+      end
+
     [
-      Helpers.finding(
-        __MODULE__,
-        :warning,
-        "#{qualified}.#{col}: ALTER COLUMN TYPE on CockroachDB is restricted " <>
-          "(cannot run inside a transaction with other statements)",
-        migration,
-        line,
+      Helpers.finding(__MODULE__, :warning, message, migration, line,
         relations: [qualified],
         engine: :cockroachdb
       )
     ]
+  end
+
+  defp generated_siblings(catalog, table, col) do
+    case Catalog.table(catalog, table) do
+      nil -> []
+      t -> for c <- t.columns, c.generated == :stored, c.name != col, do: c.name
+    end
   end
 
   defp indexes_on(catalog, table, col) do
