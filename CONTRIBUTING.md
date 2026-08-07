@@ -73,7 +73,7 @@ mix docs   # zero warnings
 
 ## Tests
 
-The suite is layered (see the design doc in `docs/design/`):
+The suite is layered:
 
 - **Layer 0/1** — pure unit and fixture-based rule tests
   (the helpers in `test/support/snapshot_builder.ex` and
