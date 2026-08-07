@@ -27,6 +27,7 @@ defmodule Cerbero.DDL.Locks do
     alter_column_type_binary_coercible: {:access_exclusive, :metadata_only},
     attach_partition: {:share_update_exclusive, :full_scan},
     set_logged: {:access_exclusive, :rewrite},
+    set_unlogged: {:access_exclusive, :rewrite},
     truncate: {:access_exclusive, :metadata_only},
     # Layer 4 (empirical, PG 16): REINDEX TABLE takes ACCESS EXCLUSIVE on
     # each index it rebuilds but only SHARE on the table itself — the same
@@ -44,6 +45,7 @@ defmodule Cerbero.DDL.Locks do
     drop_column: {:access_exclusive, :metadata_only},
     rename: {:access_exclusive, :metadata_only},
     set_default: {:access_exclusive, :metadata_only},
+    drop_default: {:access_exclusive, :metadata_only},
     drop_table: {:access_exclusive, :metadata_only},
     create_table: {:none, :metadata_only},
     dml_update: {:row_exclusive, :full_scan},

@@ -7,9 +7,6 @@ defmodule Cerbero.DDL.Effects do
 
   @doc """
   Every class this module can emit — checked against Locks by the totality test.
-  Excludes :set_default, which has a Locks entry but is not currently emitted by
-  any classification path (reserved for a future classifier — no raw-SQL or DSL
-  operation routes to it yet).
   """
   def classes_emitted do
     ~w(create_table create_index create_index_concurrently drop_index drop_index_concurrently
@@ -17,6 +14,8 @@ defmodule Cerbero.DDL.Effects do
        add_primary_key add_unique set_not_null add_check add_check_not_valid validate_check
        add_foreign_key add_foreign_key_not_valid validate_foreign_key alter_column_type
        truncate reindex reindex_concurrently drop_column drop_table rename
+       attach_partition detach_partition detach_partition_concurrently
+       set_logged set_unlogged set_default drop_default
        dml_update dml_delete dml_insert_select)a
   end
 
@@ -189,6 +188,30 @@ defmodule Cerbero.DDL.Effects do
 
   defp sql_class(%Classified{class: :alter_column_type, table: t}),
     do: [{:alter_column_type, [target: t]}]
+
+  defp sql_class(%Classified{class: :rename, table: t}), do: [{:rename, [target: t]}]
+
+  # ATTACH PARTITION validation-scans the attached partition (unless a
+  # proving CHECK already exists); the parent takes SUE only. The scan is
+  # charged to the partition so severity follows the relation actually read.
+  defp sql_class(%Classified{class: :attach_partition, table: parent, ref_table: part}),
+    do: [{:attach_partition, [target: part] ++ if(parent, do: [referenced: parent], else: [])}]
+
+  defp sql_class(%Classified{
+         class: :detach_partition,
+         concurrently: c,
+         table: parent,
+         ref_table: part
+       }),
+       do: [
+         {if(c, do: :detach_partition_concurrently, else: :detach_partition),
+          [target: parent] ++ if(part, do: [referenced: part], else: [])}
+       ]
+
+  defp sql_class(%Classified{class: :set_logged, table: t}), do: [{:set_logged, [target: t]}]
+  defp sql_class(%Classified{class: :set_unlogged, table: t}), do: [{:set_unlogged, [target: t]}]
+  defp sql_class(%Classified{class: :set_default, table: t}), do: [{:set_default, [target: t]}]
+  defp sql_class(%Classified{class: :drop_default, table: t}), do: [{:drop_default, [target: t]}]
 
   defp sql_class(%Classified{class: :add_column, table: t}),
     do: [{:add_column_constant_default, [target: t]}]

@@ -36,6 +36,12 @@ It does not certify migrations as safe; it judges the statement, not the moment.
 - A raw-DDL safety net: classified raw SQL that no named rule owns is still
   judged by lock mode and cost — an ACCESS EXCLUSIVE-taking operation is
   never silent, and `TRUNCATE` carries an error-severity floor.
+- Classifier patterns for the remaining raw DDL: `RENAME` (table, column,
+  constraint), `ATTACH/DETACH PARTITION` (the attach validation scan is
+  charged to the attached partition; `DETACH ... CONCURRENTLY` is
+  recognized), `SET LOGGED`/`SET UNLOGGED` (full rewrite under ACCESS
+  EXCLUSIVE), and `SET/DROP DEFAULT` — all judged by the raw-DDL safety
+  net instead of surfacing as generic `unclassified_sql` warnings.
 - Severity that tracks reality: row/byte tiers, traffic-aware lock-queue
   gating, staleness headroom (thresholds shrink as the snapshot ages), and
   degradation to unknown-is-unbounded past the configured age. Unknown scale
@@ -65,8 +71,5 @@ It does not certify migrations as safe; it judges the statement, not the moment.
 ### Known limitations
 
 - `down` migration bodies are not judged.
-- Raw-SQL `RENAME`, `ATTACH/DETACH PARTITION`, and `SET LOGGED/UNLOGGED`
-  forms have no classifier patterns yet and surface as `unclassified_sql`
-  warnings rather than typed findings.
 - A snapshot is point-in-time: pending vs. applied-after-snapshot is
   offline-indistinguishable; scheduled re-export is the real mitigation.
