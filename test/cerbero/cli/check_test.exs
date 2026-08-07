@@ -221,6 +221,23 @@ defmodule Cerbero.CLI.CheckTest do
     assert output =~ "order-of-magnitude precision"
   end
 
+  describe "snapshot signing" do
+    @tag :tmp_dir
+    test "snapshot_verify_keys in config rejects an unsigned snapshot at exit 2", %{
+      tmp_dir: tmp_dir
+    } do
+      {pub, _seed} = Cerbero.Snapshot.Signature.generate()
+      config = Path.join(tmp_dir, ".cerbero.exs")
+      File.write!(config, ~s|[snapshot_verify_keys: ["#{pub}"]]|)
+
+      {code, output} =
+        run(["--snapshot", @snapshot, "--migrations", @migrations, "--config", config])
+
+      assert code == 2
+      assert output =~ "unsigned"
+    end
+  end
+
   describe "--down" do
     @down_migration """
     defmodule DownUnsafe do

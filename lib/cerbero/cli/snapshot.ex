@@ -24,8 +24,10 @@ defmodule Cerbero.CLI.Snapshot do
     emit_sql: :boolean,
     engine: :string,
     from_file: :string,
+    gen_signing_key: :string,
     migration_source: :string,
-    precision: :string
+    precision: :string,
+    sign_key: :string
   ]
 
   @spec run([String.t()], keyword()) :: 0 | 2
@@ -35,12 +37,50 @@ defmodule Cerbero.CLI.Snapshot do
     {parsed, _, _} = OptionParser.parse(argv, strict: @switches)
     out = parsed[:out] || "priv/repo/cerbero_snapshot.json"
 
-    with {:ok, config} <- Config.load(parsed[:config] || ".cerbero.exs"),
-         {:ok, precision} <- precision(parsed, config),
-         {:ok, engine} <- engine(parsed) do
-      do_run(parsed, config, precision, engine, out, clock, io)
-    else
-      {:error, reason} -> error(io, reason)
+    case parsed[:gen_signing_key] do
+      nil ->
+        with {:ok, config} <- Config.load(parsed[:config] || ".cerbero.exs"),
+             {:ok, precision} <- precision(parsed, config),
+             {:ok, engine} <- engine(parsed),
+             {:ok, sign_seed} <- sign_seed(parsed) do
+          do_run(parsed, config, precision, engine, sign_seed, out, clock, io)
+        else
+          {:error, reason} -> error(io, reason)
+        end
+
+      key_path ->
+        gen_signing_key(key_path, io)
+    end
+  end
+
+  # Keypair generation for snapshot signing: seed (base64) to the file,
+  # public key to stdout for .cerbero.exs snapshot_verify_keys.
+  defp gen_signing_key(path, io) do
+    {pub, seed} = Cerbero.Snapshot.Signature.generate()
+    File.write!(path, seed <> "\n")
+    File.chmod(path, 0o600)
+    IO.write(io, "cerbero: wrote #{path}\npublic key: #{pub}\n")
+    0
+  end
+
+  # Read and validate the seed before touching any database, so a bad key
+  # file is a fast exit 2, not a wasted export.
+  defp sign_seed(parsed) do
+    case parsed[:sign_key] do
+      nil ->
+        {:ok, nil}
+
+      path ->
+        with {:ok, contents} <- File.read(path),
+             {:ok, seed} <- Base.decode64(String.trim(contents)),
+             32 <- byte_size(seed) do
+          {:ok, String.trim(contents)}
+        else
+          _ ->
+            {:error,
+             "cannot use --sign-key #{path}: must be a readable base64 32-byte ed25519 seed " <>
+               "(generate one with --gen-signing-key)"}
+        end
     end
   end
 
@@ -64,7 +104,7 @@ defmodule Cerbero.CLI.Snapshot do
     end
   end
 
-  defp do_run(parsed, config, precision, engine, out, clock, io) do
+  defp do_run(parsed, config, precision, engine, sign_seed, out, clock, io) do
     result =
       cond do
         parsed[:emit_sql] ->
@@ -91,6 +131,7 @@ defmodule Cerbero.CLI.Snapshot do
         0
 
       {:ok, raw} ->
+        raw = maybe_sign(raw, sign_seed)
         Snapshot.write!(raw, out)
         IO.write(io, "cerbero: wrote #{out}\n")
         0
@@ -99,6 +140,11 @@ defmodule Cerbero.CLI.Snapshot do
         error(io, reason)
     end
   end
+
+  defp maybe_sign(raw, nil), do: raw
+
+  defp maybe_sign(raw, seed),
+    do: raw |> Snapshot.stamp() |> Cerbero.Snapshot.Signature.sign(seed)
 
   defp error(io, reason) do
     IO.write(io, "cerbero: error: #{inspect(reason)}\n")

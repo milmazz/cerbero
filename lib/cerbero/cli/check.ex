@@ -222,7 +222,10 @@ defmodule Cerbero.CLI.Check do
   end
 
   defp with_snapshot(parsed, config, migrations, clock) do
-    with {:ok, snapshot} <- Snapshot.load(parsed[:snapshot] || config.snapshot_path) do
+    with {:ok, snapshot} <-
+           Snapshot.load(parsed[:snapshot] || config.snapshot_path,
+             verify_keys: config.snapshot_verify_keys
+           ) do
       staleness = Staleness.assess(snapshot, clock.(), config)
       catalog = Catalog.from_snapshot(snapshot, staleness)
       pending = Runner.select_pending(migrations, snapshot.applied_migrations, config.start_after)

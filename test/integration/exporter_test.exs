@@ -134,8 +134,10 @@ defmodule Cerbero.Integration.ExporterTest do
     orgs = Enum.find(raw["tables"], &(&1["name"] == "orgs"))
     assert orgs["n_live_tup"] in [100, nil]
 
-    # and it still strict-decodes as a v2 order-of-magnitude snapshot
-    assert {:ok, %Snapshot{precision: :order_of_magnitude, format_version: 2}} =
+    # and it still strict-decodes as a current-format order-of-magnitude snapshot
+    current = Snapshot.format_version()
+
+    assert {:ok, %Snapshot{precision: :order_of_magnitude, format_version: ^current}} =
              raw |> Snapshot.stamp() |> Snapshot.decode()
   end
 

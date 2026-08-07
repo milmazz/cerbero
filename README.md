@@ -52,7 +52,10 @@ warned); a scrubbed subset copy produces confidently wrong scale and is
 incompatible with scale judgment.
 
 The checksum detects corruption and hand-edits. It is not tamper-proofing:
-anyone who can commit can regenerate it.
+anyone who can commit can regenerate it. For tamper-proofing, sign snapshots
+(`mix cerbero.snapshot --sign-key`, keygen via `--gen-signing-key`) and pin
+the public keys in `snapshot_verify_keys` — then a regenerated checksum no
+longer verifies.
 
 ## Why not excellent_migrations?
 
@@ -111,7 +114,8 @@ defaults spelled out and commented):
       schemas: ["public"],
       snapshot_path: "priv/repo/cerbero_snapshot.json",
       migrations_paths: ["priv/repo/migrations"],
-      repos: []                   # umbrella multi-repo: [[name: "app_a", migrations_paths: [...], snapshot_path: "..."]]; check runs all, or one via --repo NAME
+      repos: [],                  # umbrella multi-repo: [[name: "app_a", migrations_paths: [...], snapshot_path: "..."]]; check runs all, or one via --repo NAME
+      snapshot_verify_keys: []    # base64 Ed25519 public keys; when set, snapshots must be signed (mix cerbero.snapshot --sign-key, keygen via --gen-signing-key)
     ]
 
 Per-migration escape hatch (reason required, findings still shown at info):

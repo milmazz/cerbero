@@ -21,7 +21,8 @@ defmodule Cerbero.Config do
             schemas: ["public"],
             migrations_paths: ["priv/repo/migrations"],
             snapshot_path: "priv/repo/cerbero_snapshot.json",
-            repos: []
+            repos: [],
+            snapshot_verify_keys: []
 
   @type t :: %__MODULE__{}
 
@@ -43,8 +44,9 @@ defmodule Cerbero.Config do
 
     case Keyword.keys(opts) -- known do
       [] ->
-        with {:ok, config} <- validate_extra_checks(struct!(__MODULE__, opts)) do
-          validate_repos(config)
+        with {:ok, config} <- validate_extra_checks(struct!(__MODULE__, opts)),
+             {:ok, config} <- validate_repos(config) do
+          validate_verify_keys(config)
         end
 
       unknown ->
@@ -94,6 +96,21 @@ defmodule Cerbero.Config do
 
   defp normalize_repo(other) do
     {:error, "each entry must be a keyword list or map, got: #{inspect(other)}"}
+  end
+
+  # Snapshot tamper-proofing trust anchors: base64 Ed25519 public keys.
+  defp validate_verify_keys(%__MODULE__{snapshot_verify_keys: keys} = config)
+       when is_list(keys) do
+    if Enum.all?(keys, &(is_binary(&1) and match?({:ok, _}, Base.decode64(&1)))) do
+      {:ok, config}
+    else
+      {:error,
+       {:bad_config, "snapshot_verify_keys must be base64 public keys, got: #{inspect(keys)}"}}
+    end
+  end
+
+  defp validate_verify_keys(%__MODULE__{snapshot_verify_keys: other}) do
+    {:error, {:bad_config, "snapshot_verify_keys must be a list, got: #{inspect(other)}"}}
   end
 
   # Registration is validated at load time so a typo'd or non-conforming

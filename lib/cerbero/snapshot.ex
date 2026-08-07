@@ -3,7 +3,10 @@ defmodule Cerbero.Snapshot do
   The snapshot artifact: decode, verify, canonically re-encode.
 
   The checksum detects corruption and hand-edits — anyone who can commit
-  can regenerate it; it is not tamper-proofing.
+  can regenerate it; it is not tamper-proofing. Tamper-proofing is the
+  optional Ed25519 signature (`Cerbero.Snapshot.Signature`, format v3):
+  when `.cerbero.exs` pins `snapshot_verify_keys`, a snapshot must carry
+  a valid signature from one of those keys to load.
   """
 
   alias Cerbero.Snapshot.Canonical
@@ -53,16 +56,20 @@ defmodule Cerbero.Snapshot do
 
   # v2 adds the optional top-level "precision" field ("exact" |
   # "order_of_magnitude") — required to interpret count/byte fields honestly
-  # when the order-of-magnitude export mode is used. v1 snapshots (no
-  # precision field) remain fully supported and default to :exact.
-  @format_version 2
+  # when the order-of-magnitude export mode is used. v3 adds the optional
+  # top-level "signature" field (Ed25519 over the checksum — see
+  # Cerbero.Snapshot.Signature). v1/v2 snapshots remain fully supported.
+  @format_version 3
   @min_supported 1
 
   def format_version, do: @format_version
 
   @spec compute_checksum(map()) :: String.t()
   def compute_checksum(map) when is_map(map) do
-    canonical = Canonical.encode(Map.put(map, "checksum", nil))
+    # The signature is excluded alongside the checksum itself: it is
+    # computed FROM the checksum, so covering it would make
+    # sign-after-stamp self-invalidating.
+    canonical = map |> Map.put("checksum", nil) |> Map.delete("signature") |> Canonical.encode()
     "sha256:" <> Base.encode16(:crypto.hash(:sha256, canonical), case: :lower)
   end
 
@@ -72,11 +79,14 @@ defmodule Cerbero.Snapshot do
   @spec write!(map(), Path.t()) :: :ok
   def write!(map, path), do: File.write!(path, Canonical.encode(stamp(map)))
 
-  @spec load(Path.t()) :: {:ok, %__MODULE__{}} | {:error, term()}
-  def load(path) do
+  @spec load(Path.t(), keyword()) :: {:ok, %__MODULE__{}} | {:error, term()}
+  def load(path, opts \\ []) do
+    verify_keys = Keyword.get(opts, :verify_keys, [])
+
     with {:ok, bytes} <- read(path),
          {:ok, raw} <- decode_json(bytes),
          :ok <- verify_checksum(raw),
+         :ok <- Cerbero.Snapshot.Signature.verify(raw, verify_keys),
          :ok <- gate_version(raw) do
       decode(raw)
     end
@@ -117,7 +127,7 @@ defmodule Cerbero.Snapshot do
 
   # Typed strict decode
 
-  @top_fields ~w(applied_migrations cerbero_version checksum collected_at database engine format_version precision standby stats_provenance stats_reset tables)
+  @top_fields ~w(applied_migrations cerbero_version checksum collected_at database engine format_version precision signature standby stats_provenance stats_reset tables)
   @engine_fields ~w(name version version_num)
   @table_fields ~w(columns constraints heap_bytes idx_scan indexes last_analyze last_autoanalyze n_live_tup n_tup_del n_tup_ins n_tup_upd name partition_of partitioned relpages reltuples schema seq_scan total_bytes)
   @column_fields ~w(default generated identity name not_null type)

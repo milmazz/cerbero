@@ -82,6 +82,13 @@ It does not certify migrations as safe; it judges the statement, not the moment.
   code-scanning annotations. Findings map `error`/`warning`/`note` from their
   severities; global snapshot-health findings anchor to the committed snapshot
   file so they still surface in PR review.
+- Cryptographic snapshot signing (format v3): `mix cerbero.snapshot
+  --gen-signing-key` mints an Ed25519 keypair, `--sign-key` signs the export
+  (signature over the checksum, which covers the canonical content), and
+  `snapshot_verify_keys` in `.cerbero.exs` pins the trusted public keys —
+  once set, an unsigned, tampered-and-restamped, or foreign-key-signed
+  snapshot refuses to load. Unsigned snapshots without pinned keys behave
+  exactly as before; v1/v2 snapshots remain fully readable.
 - `mix cerbero.check --down` judges rollback bodies: `def down` operations and
   the down leg of two-arg `execute` are parsed into their own operation list
   and judged against the catalog as the pending ups leave it (the state a

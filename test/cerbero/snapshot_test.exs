@@ -121,8 +121,10 @@ defmodule Cerbero.SnapshotTest do
 
     @tag :tmp_dir
     test "refuses a newer format_version, telling the user to upgrade", %{tmp_dir: tmp_dir} do
-      assert {:error, {:format_too_new, 3, "upgrade cerbero"}} =
-               reload_with(tmp_dir, &Map.put(&1, "format_version", 3))
+      too_new = Cerbero.Snapshot.format_version() + 1
+
+      assert {:error, {:format_too_new, ^too_new, "upgrade cerbero"}} =
+               reload_with(tmp_dir, &Map.put(&1, "format_version", too_new))
     end
 
     @tag :tmp_dir

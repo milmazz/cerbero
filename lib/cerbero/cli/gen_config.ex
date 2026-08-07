@@ -71,6 +71,11 @@ defmodule Cerbero.CLI.GenConfig do
     migrations_paths: ["priv/repo/migrations"],
     snapshot_path: "priv/repo/cerbero_snapshot.json",
 
+    # Snapshot tamper-proofing: base64 Ed25519 public keys. When set,
+    # snapshots must be signed by one of them (mix cerbero.snapshot
+    # --sign-key; generate a keypair with --gen-signing-key).
+    snapshot_verify_keys: [],
+
     # Umbrella apps with several Ecto repos: one entry per repo, e.g.
     # [name: "app_a", migrations_paths: ["apps/app_a/priv/repo/migrations"],
     #  snapshot_path: "apps/app_a/priv/repo/cerbero_snapshot.json"].

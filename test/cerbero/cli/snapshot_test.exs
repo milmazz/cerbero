@@ -67,6 +67,30 @@ defmodule Cerbero.CLI.SnapshotTest do
     assert output =~ "invalid --engine"
   end
 
+  @tag :tmp_dir
+  test "--gen-signing-key writes a key file and prints the base64 public key", %{
+    tmp_dir: tmp_dir
+  } do
+    key_path = Path.join(tmp_dir, "signing.key")
+
+    {code, output} = run(["--gen-signing-key", key_path])
+
+    assert code == 0
+    assert output =~ "public key: "
+    assert File.exists?(key_path)
+
+    [_, pub] = Regex.run(~r/public key: (\S+)/, output)
+    assert {:ok, _} = Base.decode64(pub)
+  end
+
+  test "--sign-key with an unreadable key file is exit 2, before attempting any export" do
+    {code, output} =
+      run(["--sign-key", "nonexistent.key", "--url", "postgres://unreachable/db"])
+
+    assert code == 2
+    assert output =~ "sign-key"
+  end
+
   test "an invalid --precision value is exit 2, before attempting any export" do
     {code, output} = run(["--precision", "fuzzy", "--url", "postgres://unreachable/db"])
 
