@@ -82,6 +82,11 @@ It does not certify migrations as safe; it judges the statement, not the moment.
   code-scanning annotations. Findings map `error`/`warning`/`note` from their
   severities; global snapshot-health findings anchor to the committed snapshot
   file so they still surface in PR review.
+- Per-table stats-age `snapshot_health` finding: an error-tier table targeted
+  by the pending set whose statistics were already older than
+  `stale_warn_days` at export (or never analyzed) now gets an explicit
+  low-confidence warning, instead of only an old date inside other rules'
+  messages. Standby snapshots keep their single standby warning.
 - Raw-SQL `ADD COLUMN ... DEFAULT` volatility detection for rule 3: a default
   opening with a function call or parenthesized expression (`now()`,
   `random()`, `gen_random_uuid()`, `nextval(...)`) now classifies as

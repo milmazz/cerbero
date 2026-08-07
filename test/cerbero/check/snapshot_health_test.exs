@@ -161,4 +161,108 @@ defmodule Cerbero.Check.SnapshotHealthTest do
                  &1.message =~ "re-export")
            )
   end
+
+  describe "per-table stats age" do
+    defp big_events(stats_overrides) do
+      table(
+        "events",
+        Map.merge(
+          %{"n_live_tup" => 5_000_000, "reltuples" => 5_000_000.0},
+          stats_overrides
+        )
+      )
+    end
+
+    defp index_on_events, do: pending!("20260701000000", "create index(:events, [:org_id])")
+
+    test "error-tier table targeted by pending with stats old at export: warning naming the age" do
+      findings =
+        run_health(
+          snapshot: %{
+            "tables" => [
+              big_events(%{"last_analyze" => nil, "last_autoanalyze" => "2026-05-01T00:00:00Z"})
+            ]
+          },
+          pending: [index_on_events()]
+        )
+
+      assert Enum.any?(
+               findings,
+               &(&1.severity == :warning and &1.message =~ "61 days" and
+                   &1.message =~ "public.events" and &1.relations == ["public.events"])
+             )
+    end
+
+    test "error-tier targeted table with no analyze timestamps at all: warning" do
+      findings =
+        run_health(
+          snapshot: %{
+            "tables" => [big_events(%{"last_analyze" => nil, "last_autoanalyze" => nil})]
+          },
+          pending: [index_on_events()]
+        )
+
+      assert Enum.any?(
+               findings,
+               &(&1.severity == :warning and &1.message =~ "no analyze timestamp" and
+                   &1.message =~ "public.events")
+             )
+    end
+
+    test "fresh stats on an error-tier targeted table: silent" do
+      findings =
+        run_health(
+          snapshot: %{"tables" => [big_events(%{})]},
+          pending: [index_on_events()]
+        )
+
+      refute Enum.any?(findings, &(&1.message =~ "analyze"))
+    end
+
+    test "old stats on a small targeted table: silent" do
+      findings =
+        run_health(
+          snapshot: %{
+            "tables" => [
+              table("events", %{
+                "n_live_tup" => 1000,
+                "reltuples" => 1000.0,
+                "last_autoanalyze" => "2026-05-01T00:00:00Z"
+              })
+            ]
+          },
+          pending: [index_on_events()]
+        )
+
+      refute Enum.any?(findings, &(&1.message =~ "analyze"))
+    end
+
+    test "old stats on an error-tier table not targeted by pending: silent" do
+      findings =
+        run_health(
+          snapshot: %{
+            "tables" => [
+              big_events(%{"last_analyze" => nil, "last_autoanalyze" => "2026-05-01T00:00:00Z"})
+            ]
+          },
+          pending: [pending!("20260701000001", "create index(:orders, [:org_id])")]
+        )
+
+      refute Enum.any?(findings, &(&1.message =~ "61 days"))
+    end
+
+    test "standby snapshot: no per-table stats-age pile-on beyond the standby warning" do
+      findings =
+        run_health(
+          snapshot: %{
+            "standby" => true,
+            "stats_provenance" => "standby",
+            "tables" => [big_events(%{"last_analyze" => nil, "last_autoanalyze" => nil})]
+          },
+          pending: [index_on_events()]
+        )
+
+      refute Enum.any?(findings, &(&1.message =~ "no analyze timestamp"))
+    end
+  end
 end

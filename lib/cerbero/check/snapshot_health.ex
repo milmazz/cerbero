@@ -28,7 +28,8 @@ defmodule Cerbero.Check.SnapshotHealth do
       divergence_findings(snapshot, all_migrations) ++
       aged_pending_findings(snapshot, pending, config) ++
       standby_findings(snapshot) ++
-      absent_table_findings(pending, catalog)
+      absent_table_findings(pending, catalog) ++
+      stats_age_findings(snapshot, pending, catalog, config)
   end
 
   defp finding(severity, message, opts \\ []) do
@@ -144,6 +145,74 @@ defmodule Cerbero.Check.SnapshotHealth do
   end
 
   defp standby_findings(_), do: []
+
+  # Per-table stats age (roadmap item 9): an error-tier table whose
+  # statistics were already older than stale_warn_days when the snapshot
+  # was exported (or never analyzed at all) gets an explicit
+  # confidence-reduction warning, instead of only showing an old date
+  # inside other rules' messages. Scoped to tables the pending set
+  # actually targets — those are the judgments the stale stats degrade.
+  # Standby snapshots are excluded: their timestamps are NULL by
+  # mechanism and standby_findings/1 already covers that.
+  defp stats_age_findings(%Snapshot{standby: true}, _pending, _catalog, _config), do: []
+
+  defp stats_age_findings(%Snapshot{} = snapshot, pending, catalog, config) do
+    targeted = targeted_tables(pending, catalog)
+
+    for t <- snapshot.tables,
+        qualified = "#{t.schema}.#{t.name}",
+        MapSet.member?(targeted, qualified),
+        error_tier?(catalog, qualified, config),
+        age = stats_age_days(t, snapshot.collected_at),
+        age == :never or age > config.stale_warn_days do
+      message =
+        case age do
+          :never ->
+            "#{qualified} is at error-tier scale but the snapshot has no analyze timestamp " <>
+              "for it (never analyzed, or stats reset) — its row estimates are low-confidence; " <>
+              "ANALYZE and re-export"
+
+          days ->
+            "#{qualified} is at error-tier scale but its statistics were already #{days} days " <>
+              "old at export (threshold #{config.stale_warn_days}d) — its row estimates are " <>
+              "low-confidence; ANALYZE and re-export"
+        end
+
+      finding(:warning, message, relations: [qualified])
+    end
+  end
+
+  defp targeted_tables(pending, catalog) do
+    for m <- pending,
+        op <- m.operations,
+        effect <- Effects.derive(op, catalog.engine, catalog.version_num),
+        {_role, table} <- effect.relations,
+        is_binary(table),
+        into: MapSet.new() do
+      Catalog.qualify(table)
+    end
+  end
+
+  defp error_tier?(catalog, qualified, %Config{} = c) do
+    case Catalog.scale(catalog, qualified) do
+      {:rows, rows, bytes} ->
+        rows >= c.rows_error * catalog.multiplier or bytes >= c.bytes_error * catalog.multiplier
+
+      _ ->
+        false
+    end
+  end
+
+  defp stats_age_days(t, collected_at) do
+    case Enum.reject([t.last_analyze, t.last_autoanalyze], &is_nil/1) do
+      [] ->
+        :never
+
+      stamps ->
+        newest = Enum.max(stamps, DateTime)
+        div(DateTime.diff(collected_at, newest, :second), 86_400)
+    end
+  end
 
   # Absent-and-not-created-by-pending => unknown scale + a demand for re-export.
   defp absent_table_findings(pending, catalog) do
