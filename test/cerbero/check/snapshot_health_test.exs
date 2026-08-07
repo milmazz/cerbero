@@ -11,6 +11,7 @@ defmodule Cerbero.Check.SnapshotHealthTest do
     snapshot = build_snapshot(Keyword.get(opts, :snapshot, %{}))
     age = Keyword.get(opts, :age_days, 1)
     {:ok, config} = Config.load("nonexistent")
+    config = struct!(config, Keyword.get(opts, :config, []))
 
     staleness = %Staleness{
       age_days: age,
@@ -74,6 +75,30 @@ defmodule Cerbero.Check.SnapshotHealthTest do
   test "aged-pending heuristic: pending migration older than the snapshot has likely been deployed" do
     findings = run_health(pending: [pending!("20250101000000", "create index(:x, [:y])")])
     assert Enum.any?(findings, &(&1.message =~ "already be applied"))
+  end
+
+  test "aged-pending: a pending migration within the deploy cadence is not flagged" do
+    # collected_at defaults to 2026-07-01T00:00:00Z; 12 hours earlier is
+    # inside the default deploy_cadence of 1 day — normal PR churn under
+    # the documented nightly-refresh workflow, not a stale-deploy signal.
+    findings = run_health(pending: [pending!("20260630120000", "create index(:x, [:y])")])
+    refute Enum.any?(findings, &(&1.message =~ "already be applied"))
+  end
+
+  test "aged-pending: deploy_cadence widens the grace window" do
+    # 16 days before collected_at: flagged under the default 1-day cadence,
+    # silent when the team's declared cadence covers it.
+    pending = [pending!("20260615000000", "create index(:x, [:y])")]
+
+    assert Enum.any?(
+             run_health(pending: pending),
+             &(&1.message =~ "already be applied")
+           )
+
+    refute Enum.any?(
+             run_health(pending: pending, config: [deploy_cadence: 30]),
+             &(&1.message =~ "already be applied")
+           )
   end
 
   test "standby snapshot: degraded stats warning" do

@@ -50,6 +50,10 @@ It does not certify migrations as safe; it judges the statement, not the moment.
   still shown) and configuration via `.cerbero.exs` (thresholds, headroom,
   staleness ages, severity overrides, `strict_concurrent_index`,
   `lock_timeout_attested`, schemas, paths).
+- Aged-pending grace window tied to deploy cadence: the `deploy_cadence`
+  config key (days, default 1) keeps the snapshot-health heuristic from
+  flagging every pending migration merely older than a nightly-refreshed
+  snapshot; only migrations predating it by more than one deploy cycle warn.
 - Opt-in `precision: :order_of_magnitude` export mode (config or
   `mix cerbero.snapshot --precision`): buckets every exported count and byte
   to its power-of-ten floor so committed snapshots do not reveal exact

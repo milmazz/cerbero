@@ -5,6 +5,7 @@ defmodule Cerbero.Config do
             rows_error: 1_000_000,
             bytes_error: 1_073_741_824,
             hot_ops_per_sec: 1.0,
+            deploy_cadence: 1,
             headroom_days: 14,
             headroom_multiplier: 0.5,
             stale_warn_days: 30,

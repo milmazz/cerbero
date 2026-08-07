@@ -94,6 +94,7 @@ CockroachDB only — no adapter behaviour in v1.
       rows_error: 1_000_000,
       bytes_error: 1_073_741_824,
       hot_ops_per_sec: 1.0,
+      deploy_cadence: 1,          # days between deploys; pending migrations this close to the snapshot aren't flagged as aged
       headroom_days: 14,          # past this, thresholds shrink by headroom_multiplier
       headroom_multiplier: 0.5,
       stale_warn_days: 30,
