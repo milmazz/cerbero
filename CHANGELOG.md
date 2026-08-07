@@ -29,7 +29,9 @@ It does not certify migrations as safe; it judges the statement, not the moment.
   in raw SQL), volatile-default and `GENERATED ... STORED` rewrites, catalog-aware
   column type changes (binary-coercible pairs stay quiet; index rebuilds are
   named), foreign-key validation scans (both tables' scale; the referenced
-  table's blocked writes are called out), missing FK indexes, CockroachDB
+  table's blocked writes are called out), missing FK indexes (covering both
+  `alter table` adds and `references(...)` declared inside the create block;
+  primary-key columns count as covered), CockroachDB
   transactional-DDL restrictions, snapshot health (staleness, invalid indexes,
   history divergence, absent tables), unbatched DML at scale, and
   `CREATE INDEX CONCURRENTLY` attribute requirements.

@@ -16,14 +16,30 @@ defmodule Cerbero.Check.FKMissingIndex do
           into: MapSet.new(),
           do: {Catalog.qualify(t), to_string(first)}
 
-    for %Op.AlterTable{table: table, ops: ops, line: line} <- migration.operations,
-        {op_kind, col, {:references, ref, _opts}, _col_opts} <- normalize(ops),
-        op_kind in [:add_column, :modify_column],
+    for op <- migration.operations,
+        {table, col, ref, line} <- fk_columns(op),
         not covered?(catalog, table, col, same_migration_indexed),
         finding <- [emit(table, col, ref, line, migration, config)] do
       finding
     end
   end
+
+  defp fk_columns(%Op.AlterTable{table: table, ops: ops, line: line}) do
+    for {op_kind, col, {:references, ref, _opts}, _col_opts} <- normalize(ops),
+        op_kind in [:add_column, :modify_column],
+        do: {table, col, ref, line}
+  end
+
+  # FKs declared in the create block — the most common shape of the
+  # missing-index mistake. A primary_key: true column is covered by the PK
+  # index the create itself builds.
+  defp fk_columns(%Op.CreateTable{table: table, columns: columns, line: line}) do
+    for %{name: col, type: {:references, ref, _opts}, opts: col_opts} <- columns,
+        Keyword.get(col_opts, :primary_key, false) != true,
+        do: {table, col, ref, line}
+  end
+
+  defp fk_columns(_op), do: []
 
   defp normalize(ops) do
     Enum.map(ops, fn
