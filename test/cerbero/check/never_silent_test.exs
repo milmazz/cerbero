@@ -46,12 +46,10 @@ defmodule Cerbero.Check.NeverSilentTest do
     set_logged: "no classifier pattern for raw SQL SET LOGGED/UNLOGGED; no DSL op either",
     # RenameOp exists as a DSL-only Operation (Cerbero.Operation.RenameOp,
     # produced by the Ecto DSL `rename/2`); the classifier has no raw SQL
-    # RENAME pattern. Since no rule currently judges :rename via *either*
-    # path, DSL coverage is also absent — a separate, pre-existing gap
-    # this wave was not asked to close (RawDDLSafety is scoped to raw SQL
-    # only; see its moduledoc).
-    rename:
-      "no classifier pattern for raw SQL RENAME (only reachable via the DSL, and unjudged there too)",
+    # RENAME pattern, so it's excluded from this raw-SQL-driven net. The DSL
+    # path IS judged: RawDDLSafety routes RenameOp through its generic AEL
+    # note (see raw_ddl_safety_test.exs).
+    rename: "no classifier pattern for raw SQL RENAME (DSL path judged by RawDDLSafety)",
     # Documented in Cerbero.DDL.Effects's own moduledoc: no classification
     # path (raw SQL or DSL) emits this class at all.
     set_default: "never emitted by Effects.classify/sql_class on any path (see its moduledoc)",

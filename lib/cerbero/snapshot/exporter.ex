@@ -52,6 +52,18 @@ defmodule Cerbero.Snapshot.Exporter do
   defp build(conn, clock, schemas, migration_source) do
     engine = detect_engine(conn)
 
+    # Same floors the checker enforces at load time — refuse at the source
+    # rather than exporting an artifact every check run will reject.
+    with :ok <-
+           Cerbero.Snapshot.check_engine_floor(
+             String.to_existing_atom(engine["name"]),
+             engine["version_num"]
+           ) do
+      build_snapshot(conn, engine, clock, schemas, migration_source)
+    end
+  end
+
+  defp build_snapshot(conn, engine, clock, schemas, migration_source) do
     tables = rows(q!(conn, Queries.tables(engine["name"]), [schemas]))
     columns = rows(q!(conn, Queries.columns(), [schemas]))
     indexes = rows(q!(conn, Queries.indexes(engine["name"]), [schemas]))

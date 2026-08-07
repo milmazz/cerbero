@@ -5,6 +5,39 @@ defmodule Cerbero.Check.RawDDLSafetyTest do
 
   defp judge_rule(tables, body, opts \\ []), do: judge([RawDDLSafety], tables, body, opts)
 
+  test "DSL rename on a big table: AEL note, never silent" do
+    assert [%Finding{check: :raw_ddl_safety, severity: :warning, message: msg}] =
+             judge_rule(
+               [big_events_table()],
+               "rename table(:events), to: table(:events_renamed)"
+             )
+
+    assert msg =~ "ACCESS EXCLUSIVE"
+    assert msg =~ "lock_timeout"
+  end
+
+  test "DSL rename on a small cold table: info floor (AEL is never silent)" do
+    assert [%Finding{severity: :info}] =
+             judge_rule([table("prefs")], "rename table(:prefs), to: table(:preferences)")
+  end
+
+  test "DSL rename of a born table in the same pending set: silent" do
+    assert [] =
+             judge_rule([], """
+             create table(:events_v2) do
+               add :x, :bigint
+             end
+             rename table(:events_v2), to: table(:events_v3)
+             """)
+  end
+
+  test "DSL drop table on a known table: AEL note, never silent" do
+    assert [%Finding{check: :raw_ddl_safety, message: msg}] =
+             judge_rule([table("legacy")], "drop table(:legacy)")
+
+    assert msg =~ "ACCESS EXCLUSIVE"
+  end
+
   test "raw ALTER COLUMN TYPE on 412M rows: error (previously silent — no rule owned it)" do
     assert [%Finding{check: :raw_ddl_safety, severity: :error, message: msg}] =
              judge_rule(

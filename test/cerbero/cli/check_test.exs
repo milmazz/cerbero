@@ -157,6 +157,23 @@ defmodule Cerbero.CLI.CheckTest do
     assert code == 0
   end
 
+  test "a snapshot from an unsupported engine version is exit 2 (operational)" do
+    raw =
+      Cerbero.Test.SnapshotBuilder.build(%{
+        "engine" => %{"name" => "postgres", "version" => "12.9", "version_num" => 120_000}
+      })
+
+    path = Path.join(System.tmp_dir!(), "old_engine_snapshot.json")
+    Cerbero.Snapshot.write!(raw, path)
+    on_exit(fn -> File.rm(path) end)
+
+    {code, output} =
+      run(["--snapshot", path, "--migrations", @migrations, "--config", "nonexistent"])
+
+    assert code == 2
+    assert output =~ "PostgreSQL >= 13"
+  end
+
   test "an order-of-magnitude snapshot annotates the summary line" do
     raw =
       Cerbero.Test.SnapshotBuilder.build(%{

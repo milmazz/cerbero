@@ -17,9 +17,10 @@ defmodule Cerbero.Check.RawDDLSafety do
   `TRUNCATE` gets an unconditional severity floor of `:error` regardless of
   scale (destructive, irreversible — design §4) on non-born tables.
 
-  Scoped to `%Cerbero.Operation.RawSQL{}` only — Ecto DSL operations outside
-  raw SQL that also lack a judging rule (e.g. `rename/2`, DSL
-  `drop table(...)`) are a separate, pre-existing, out-of-scope gap.
+  Also the judge for the two DSL operations no named rule owns —
+  `rename table(...)` and `drop table(...)` — both metadata-only under
+  ACCESS EXCLUSIVE, judged through the same generic path (lock-queue note,
+  traffic/scale-gated severity, born-silencing).
   """
   @behaviour Cerbero.Check
 
@@ -80,6 +81,8 @@ defmodule Cerbero.Check.RawDDLSafety do
         new_findings =
           case op do
             %Op.RawSQL{} -> judge(op, migration, current_catalog, config)
+            %Op.RenameOp{} -> judge_dsl(op, migration, current_catalog, config)
+            %Op.DropTable{} -> judge_dsl(op, migration, current_catalog, config)
             _ -> []
           end
 
@@ -87,6 +90,16 @@ defmodule Cerbero.Check.RawDDLSafety do
       end)
 
     findings
+  end
+
+  # DSL rename/drop-table: one op -> one effect (AEL + metadata_only per the
+  # Locks table); the generic path supplies the lock-queue note, severity
+  # gating, and born-silencing.
+  defp judge_dsl(op, migration, catalog, config) do
+    op
+    |> Effects.derive(catalog.engine, catalog.version_num)
+    |> Enum.reject(& &1.unmapped)
+    |> Enum.flat_map(&generic_judge(&1, migration, catalog, config))
   end
 
   defp judge(%Op.RawSQL{classified: classified} = op, migration, catalog, config) do

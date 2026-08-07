@@ -108,4 +108,34 @@ defmodule Cerbero.SnapshotDecodeTest do
       assert {:error, {:invalid_value, _, :not_a_list}} = Snapshot.decode(raw)
     end
   end
+
+  describe "engine floors" do
+    defp with_engine(name, version, version_num) do
+      Cerbero.Test.SnapshotBuilder.build(%{
+        "engine" => %{"name" => name, "version" => version, "version_num" => version_num}
+      })
+    end
+
+    test "PG below 13 is refused with a clear message" do
+      assert {:error, {:unsupported_engine, msg}} =
+               Snapshot.decode(with_engine("postgres", "12.9", 120_000))
+
+      assert msg =~ "PostgreSQL >= 13"
+    end
+
+    test "PG 13 exactly is accepted" do
+      assert {:ok, %Snapshot{}} = Snapshot.decode(with_engine("postgres", "13.0", 130_000))
+    end
+
+    test "CockroachDB below v23.1 is refused" do
+      assert {:error, {:unsupported_engine, msg}} =
+               Snapshot.decode(with_engine("cockroachdb", "v22.2.4", 22_204))
+
+      assert msg =~ "CockroachDB >= v23.1"
+    end
+
+    test "CockroachDB v23.1 exactly is accepted" do
+      assert {:ok, %Snapshot{}} = Snapshot.decode(with_engine("cockroachdb", "v23.1.0", 23_100))
+    end
+  end
 end

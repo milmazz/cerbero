@@ -140,11 +140,34 @@ defmodule Cerbero.Snapshot do
   @key_kinds %{"column" => :column, "expression" => :expression}
   @precisions %{"exact" => :exact, "order_of_magnitude" => :order_of_magnitude}
 
+  # Engine floors (design §9.3): PG >= 13 (server_version_num), CRDB >= v23.1
+  # (major*1000 + minor*100 + patch encoding used by the exporter).
+  @engine_floors %{
+    postgres: {130_000, "PostgreSQL >= 13"},
+    cockroachdb: {23_100, "CockroachDB >= v23.1"}
+  }
+
+  @doc "Refuses engine versions below the supported floors."
+  @spec check_engine_floor(:postgres | :cockroachdb, integer()) ::
+          :ok | {:error, {:unsupported_engine, String.t()}}
+  def check_engine_floor(engine, version_num) do
+    {floor, requirement} = Map.fetch!(@engine_floors, engine)
+
+    if is_integer(version_num) and version_num >= floor do
+      :ok
+    else
+      {:error,
+       {:unsupported_engine,
+        "snapshot is from #{engine} version_num #{inspect(version_num)}; cerbero supports #{requirement}"}}
+    end
+  end
+
   @spec decode(map()) :: {:ok, %__MODULE__{}} | {:error, term()}
   def decode(raw) do
     with :ok <- strict(raw, @top_fields, "$"),
          :ok <- strict(raw["engine"], @engine_fields, "$.engine"),
          {:ok, engine_name} <- enum(raw["engine"]["name"], @engines, "$.engine.name"),
+         :ok <- check_engine_floor(engine_name, raw["engine"]["version_num"]),
          {:ok, provenance} <- enum(raw["stats_provenance"], @provenance, "$.stats_provenance"),
          {:ok, collected_at} <- datetime(raw["collected_at"], "$.collected_at"),
          {:ok, stats_reset} <- optional_datetime(raw["stats_reset"], "$.stats_reset"),
