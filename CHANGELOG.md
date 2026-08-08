@@ -146,6 +146,7 @@ It does not certify migrations as safe; it judges the statement, not the moment.
   now lives in `Severity.assess/6` — the module that owns judgment policy —
   as an explicit `:online_schema_change` clause shared by rules 1–3, and
   `Check.Helpers.crdb_cost_severity/3` is gone.
+- The `lock_timeout_attested` annotation now keys on structured lock metadata
   (`Finding.metadata.lock`, declared by each rule) instead of matching finding
   message text for `"lock_timeout"` / `"ACCESS EXCLUSIVE"`. The string match
   missed `fk_validation_scan` findings entirely — their SHARE ROW EXCLUSIVE
