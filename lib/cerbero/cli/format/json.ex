@@ -20,6 +20,10 @@ defmodule Cerbero.CLI.Format.JSON do
             "file" => f.file,
             "line" => f.line,
             "message" => f.message,
+            # Structured provenance (direction/no_snapshot/skipped/lock):
+            # Canonical sorts keys and stringifies atoms, so this stays
+            # deterministic; an empty map encodes as {}.
+            "metadata" => f.metadata,
             "relations" => f.relations,
             "severity" => Atom.to_string(f.severity)
           }

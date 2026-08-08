@@ -160,6 +160,29 @@ defmodule Cerbero.CLI.CheckTest do
     assert output =~ "no snapshot: structural checks only, scale unknown"
   end
 
+  test "no-snapshot structural mode json: every finding records no_snapshot: true in metadata" do
+    {code, output} =
+      run([
+        "--no-snapshot",
+        "--migrations",
+        @migrations,
+        "--config",
+        "nonexistent",
+        "--format",
+        "json"
+      ])
+
+    assert code in [0, 1]
+
+    findings =
+      output
+      |> JSON.decode!()
+      |> Map.fetch!("findings")
+
+    assert findings != []
+    assert Enum.all?(findings, &(&1["metadata"]["no_snapshot"] == true))
+  end
+
   @tag :tmp_dir
   test "empty migrations_paths in config and no --migrations flag is exit 2, not a crash", %{
     tmp_dir: tmp_dir
@@ -313,6 +336,8 @@ defmodule Cerbero.CLI.CheckTest do
                findings,
                &(&1["severity"] == "info" and &1["message"] =~ "skipped via config")
              )
+
+      assert Enum.all?(findings, &(&1["metadata"]["skipped"] == %{"via" => "config"}))
     end
   end
 
@@ -401,6 +426,40 @@ defmodule Cerbero.CLI.CheckTest do
       assert code == 1
       assert output =~ "unsafe_index_creation"
       assert output =~ "[down]"
+    end
+
+    @tag :tmp_dir
+    test "json: a downed finding records direction: down in metadata, keeping lock", %{
+      tmp_dir: tmp_dir
+    } do
+      dir = Path.join(tmp_dir, "migrations")
+      File.mkdir_p!(dir)
+      File.write!(Path.join(dir, "20260801000002_down_unsafe.exs"), @down_migration)
+
+      {code, output} =
+        run([
+          "--snapshot",
+          @snapshot,
+          "--migrations",
+          dir,
+          "--config",
+          "nonexistent",
+          "--down",
+          "--format",
+          "json"
+        ])
+
+      assert code == 1
+
+      [finding] =
+        output
+        |> JSON.decode!()
+        |> Map.fetch!("findings")
+        |> Enum.filter(&(&1["check"] == "unsafe_index_creation"))
+
+      assert finding["metadata"]["direction"] == "down"
+      # merged, not clobbered: the rule's own lock metadata survives
+      assert finding["metadata"]["lock"] == "share"
     end
   end
 

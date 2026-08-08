@@ -135,6 +135,15 @@ It does not certify migrations as safe; it judges the statement, not the moment.
 - `mix cerbero.gen.config` — writes a `.cerbero.exs` populated with the
   built-in defaults, every setting visible and commented; deleting a line
   falls back to the same default. Refuses to overwrite without `--force`.
+- Structured provenance in JSON output: each finding now carries a
+  `"metadata"` object (empty `{}` when there is none) recording as data what
+  the message strings already say in prose — `direction: "down"` for
+  `--down` findings, `no_snapshot: true` in structural mode,
+  `skipped: {"via": "migration_attribute", "reason": ...}` /
+  `skipped: {"via": "config"}` for demoted findings, plus the judged `lock`
+  each rule declares — so JSON consumers can filter without parsing
+  messages. Backward-compatible addition; `cerbero_findings_version`
+  stays 1. Human and SARIF outputs are unchanged.
 
 ### Fixed
 
