@@ -101,11 +101,25 @@ defmodule Cerbero.Check.UnsafeIndexCreation do
   defp remediation(_create, false), do: "use concurrently: true with @disable_ddl_transaction and @disable_migration_lock"
 
   defp crdb_cost_finding(effect, table, migration, catalog, config) do
-    with {:limited, note} <- CRDB.judge(:create_index, catalog.version_num),
-         {:rows, rows, _} <- Catalog.scale(catalog, table),
-         true <- rows >= config.rows_warning * catalog.multiplier do
-      severity = if rows >= config.rows_error * catalog.multiplier, do: :warning, else: :info
+    # Deliberate destructuring tripwire: CRDB.judge(:create_index, _) is
+    # {:limited, note} on every supported version. If the limitation table
+    # ever changes that answer, this rule must be revisited — not silently
+    # pass (a `with`/`else` here once swallowed :unknown scale entirely).
+    {:limited, note} = CRDB.judge(:create_index, catalog.version_num)
 
+    severity =
+      Severity.assess(
+        :online_schema_change,
+        :full_scan,
+        Catalog.scale(catalog, table),
+        Catalog.traffic(catalog, table, config),
+        config,
+        catalog.multiplier
+      )
+
+    if severity == :none do
+      []
+    else
       [
         Helpers.finding(
           __MODULE__,
@@ -118,8 +132,6 @@ defmodule Cerbero.Check.UnsafeIndexCreation do
           metadata: %{lock: :online_schema_change}
         )
       ]
-    else
-      _ -> []
     end
   end
 end

@@ -138,7 +138,14 @@ It does not certify migrations as safe; it judges the statement, not the moment.
 
 ### Fixed
 
-- The `lock_timeout_attested` annotation now keys on structured lock metadata
+- Non-concurrent index builds on a CockroachDB table with unknown scale now
+  warn instead of passing silently. Rule 1's CRDB cost branch pattern-matched
+  on `{:rows, ...}` and its `else` swallowed `:unknown` — a direct violation
+  of the "unknown scale is unbounded, never small" doctrine (rules 2 and 3
+  already warned on the same input). The CRDB online-schema-change cost tier
+  now lives in `Severity.assess/6` — the module that owns judgment policy —
+  as an explicit `:online_schema_change` clause shared by rules 1–3, and
+  `Check.Helpers.crdb_cost_severity/3` is gone.
   (`Finding.metadata.lock`, declared by each rule) instead of matching finding
   message text for `"lock_timeout"` / `"ACCESS EXCLUSIVE"`. The string match
   missed `fk_validation_scan` findings entirely — their SHARE ROW EXCLUSIVE

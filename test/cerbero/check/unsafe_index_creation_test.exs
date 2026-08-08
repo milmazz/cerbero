@@ -95,4 +95,21 @@ defmodule Cerbero.Check.UnsafeIndexCreationTest do
     assert msg =~ "foreground cluster resources"
     refute msg =~ "SHARE lock"
   end
+
+  test "CRDB: unknown-scale table warns — unknown is unbounded, never silent" do
+    crdb = %{"engine" => %{"name" => "cockroachdb", "version" => "25.1", "version_num" => 25_100}}
+
+    unstatted =
+      table("events", %{
+        "n_live_tup" => nil,
+        "reltuples" => nil,
+        "columns" => [column("id"), column("org_id")]
+      })
+
+    assert [%Finding{severity: :warning, message: msg}] =
+             judge_rule([unstatted], "create index(:events, [:org_id])", snapshot: crdb)
+
+    assert msg =~ "scale unknown — treated as unbounded"
+    assert msg =~ "foreground cluster resources"
+  end
 end

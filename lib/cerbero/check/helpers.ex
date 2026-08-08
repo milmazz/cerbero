@@ -2,7 +2,6 @@ defmodule Cerbero.Check.Helpers do
   @moduledoc "Shared rule scaffolding: the migration-local fold, message construction, finding assembly."
 
   alias Cerbero.Catalog
-  alias Cerbero.Config
   alias Cerbero.Finding
   alias Cerbero.Migration
 
@@ -21,27 +20,6 @@ defmodule Cerbero.Check.Helpers do
       end)
 
     findings
-  end
-
-  # CRDB online-operation cost tier: >= rows_error warns, >= rows_warning
-  # informs, below is silent; unknown scale warns (unbounded, never small);
-  # born-empty (:zero) is silent.
-  @spec crdb_cost_severity(Catalog.t(), String.t(), Config.t()) :: Finding.severity() | nil
-  def crdb_cost_severity(%Catalog{} = catalog, table, %Config{} = config) do
-    case Catalog.scale(catalog, table) do
-      {:rows, rows, _bytes} ->
-        cond do
-          rows >= config.rows_error * catalog.multiplier -> :warning
-          rows >= config.rows_warning * catalog.multiplier -> :info
-          true -> nil
-        end
-
-      :unknown ->
-        :warning
-
-      :zero ->
-        nil
-    end
   end
 
   @spec lock_name(atom()) :: String.t()

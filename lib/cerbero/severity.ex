@@ -58,6 +58,31 @@ defmodule Cerbero.Severity do
     end
   end
 
+  # CRDB online schema change doing real work (index build, validation
+  # scan, column backfill): no blocking lock, so the ceiling is :warning at
+  # the error tier and :info at the warning tier — but the job still
+  # consumes foreground cluster resources at scale. Unknown scale is
+  # unbounded, never small. ORDER: this clause must precede the
+  # non-blocking full-scan clause below, whose looser head would otherwise
+  # catch :online_schema_change and cap the error tier at :info (and
+  # demote :unknown — "unbounded" — to :info).
+  def assess(:online_schema_change, cost, scale, _traffic, %Config{} = c, mult) when cost in [:full_scan, :rewrite] do
+    case scale do
+      :zero ->
+        :none
+
+      :unknown ->
+        :warning
+
+      {:rows, rows, _bytes} ->
+        cond do
+          rows >= c.rows_error * mult -> :warning
+          rows >= c.rows_warning * mult -> :info
+          true -> :none
+        end
+    end
+  end
+
   # Non-blocking full scan (CIC, VALIDATE CONSTRAINT): resource cost note at scale.
   def assess(_lock, cost, {:rows, rows, bytes}, _traffic, %Config{} = c, mult) when cost in [:full_scan, :rewrite] do
     if rows >= c.rows_error * mult or bytes >= c.bytes_error * mult, do: :info, else: :none

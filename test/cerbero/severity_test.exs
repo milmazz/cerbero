@@ -35,7 +35,18 @@ defmodule Cerbero.SeverityTest do
     {:share_update_exclusive, :metadata_only, {:rows, 412_000_000, 0}, :hot, 1.0, :none},
     # non-blocking full scan (CIC, VALIDATE): cost note at scale, info
     {:share_update_exclusive, :full_scan, {:rows, 412_000_000, 0}, :cold, 1.0, :info},
-    {:share_update_exclusive, :full_scan, {:rows, 5_000, 0}, :cold, 1.0, :none}
+    {:share_update_exclusive, :full_scan, {:rows, 5_000, 0}, :cold, 1.0, :none},
+    # CRDB online schema change doing real work (index build, validation
+    # scan, column backfill): no blocking lock, so the ceiling is :warning
+    # at the error tier, :info at the warning tier; unknown scale is
+    # unbounded, never small — :warning, not silence
+    {:online_schema_change, :full_scan, {:rows, 412_000_000, 219_902_325_555}, :cold, 1.0, :warning},
+    {:online_schema_change, :rewrite, {:rows, 200_000, 0}, :cold, 1.0, :info},
+    {:online_schema_change, :full_scan, {:rows, 5_000, 8_192}, :cold, 1.0, :none},
+    {:online_schema_change, :full_scan, :unknown, :unknown, 1.0, :warning},
+    {:online_schema_change, :rewrite, :zero, :cold, 1.0, :none},
+    # headroom multiplier: 600k rows at 0.5x thresholds crosses the error tier
+    {:online_schema_change, :full_scan, {:rows, 600_000, 0}, :cold, 0.5, :warning}
   ]
 
   test "severity table", %{config: config} do
