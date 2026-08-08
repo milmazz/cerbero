@@ -23,15 +23,33 @@ defmodule Cerbero.Check.Runner do
     ]
   end
 
-  @spec select_pending([Migration.t()], [String.t()], String.t() | nil) :: [Migration.t()]
-  def select_pending(migrations, applied_versions, start_after) do
+  # The one pending-selection policy (snapshot and no-snapshot modes both
+  # route here): a migration is history iff its version is non-nil AND
+  # (already applied OR at/below the start_after cutoff). A nil-version
+  # file is ALWAYS pending — it can never match an applied version or a
+  # cutoff, and silently dropping it would violate never-silent.
+  @spec split_pending([Migration.t()], [String.t()], String.t() | nil) ::
+          {history :: [Migration.t()], pending :: [Migration.t()]}
+  def split_pending(migrations, applied_versions, start_after) do
     applied = MapSet.new(applied_versions)
 
-    migrations
-    |> Enum.reject(fn m ->
-      MapSet.member?(applied, m.version) or (start_after != nil and m.version <= start_after)
-    end)
-    |> Enum.sort_by(& &1.version)
+    {history, pending} =
+      Enum.split_with(migrations, fn m ->
+        m.version != nil and
+          (MapSet.member?(applied, m.version) or
+             (start_after != nil and m.version <= start_after))
+      end)
+
+    # nil sorts below any binary under Erlang term order, so nil-version
+    # entries come first in pending — deliberate, they belong to no point
+    # in the timestamp timeline.
+    {history, Enum.sort_by(pending, & &1.version)}
+  end
+
+  @spec select_pending([Migration.t()], [String.t()], String.t() | nil) :: [Migration.t()]
+  def select_pending(migrations, applied_versions, start_after) do
+    {_history, pending} = split_pending(migrations, applied_versions, start_after)
+    pending
   end
 
   @spec run([Migration.t()], Catalog.t(), Config.t(), [module()]) :: {[Finding.t()], Catalog.t()}

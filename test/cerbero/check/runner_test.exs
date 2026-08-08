@@ -70,6 +70,38 @@ defmodule Cerbero.Check.RunnerTest do
              Runner.select_pending(migrations, [], "20260801000000")
   end
 
+  test "select_pending: a nil-version migration survives a start_after cutoff" do
+    migrations = [%Migration{version: nil, file: "unversioned.exs"}]
+
+    assert [%{version: nil}] = Runner.select_pending(migrations, [], "20260801000000")
+  end
+
+  test "split_pending: nil-version migrations are always pending, even with start_after set" do
+    migrations = [
+      %Migration{version: "20250101000000"},
+      %Migration{version: nil, file: "unversioned.exs"},
+      %Migration{version: "20260801000001"}
+    ]
+
+    {history, pending} = Runner.split_pending(migrations, [], "20260801000000")
+
+    assert [%{version: "20250101000000"}] = history
+    assert [%{version: nil}, %{version: "20260801000001"}] = pending
+  end
+
+  test "split_pending: applied versions land in history; pending is sorted by version" do
+    migrations = [
+      %Migration{version: "20260801000001"},
+      %Migration{version: "20250101000000"},
+      %Migration{version: "20260801000000"}
+    ]
+
+    {history, pending} = Runner.split_pending(migrations, ["20250101000000"], nil)
+
+    assert [%{version: "20250101000000"}] = history
+    assert [%{version: "20260801000000"}, %{version: "20260801000001"}] = pending
+  end
+
   test "overlay threads between migrations: migration 2 sees migration 1's table", %{
     config: config
   } do

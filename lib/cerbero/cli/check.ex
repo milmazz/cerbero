@@ -278,10 +278,7 @@ defmodule Cerbero.CLI.Check do
   end
 
   defp structural(parsed, config, migrations) do
-    {history, pending} =
-      Enum.split_with(migrations, fn m ->
-        config.start_after != nil and m.version != nil and m.version <= config.start_after
-      end)
+    {history, pending} = Runner.split_pending(migrations, [], config.start_after)
 
     catalog = Enum.reduce(history, Catalog.empty(), &Catalog.apply_migration(&2, &1))
     {findings, catalog_after_up} = Runner.run(pending, catalog, config)

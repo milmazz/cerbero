@@ -316,6 +316,61 @@ defmodule Cerbero.CLI.CheckTest do
     end
   end
 
+  describe "start_after and unversioned migration files" do
+    @unversioned_unsafe """
+    defmodule AppRepo.Migrations.UnversionedUnsafe do
+      use Ecto.Migration
+
+      def change do
+        create(index(:events, [:org_id, :inserted_at]))
+      end
+    end
+    """
+
+    @tag :tmp_dir
+    test "snapshot mode judges nil-version files; start_after still rejects versioned history", %{
+      tmp_dir: tmp_dir
+    } do
+      dir = Path.join(tmp_dir, "migrations")
+      File.mkdir_p!(dir)
+      # No timestamp prefix -> Parser derives version: nil. Silently
+      # dropping this file in snapshot mode was the bug (issue #4 item 3).
+      File.write!(Path.join(dir, "unversioned_add_index.exs"), @unversioned_unsafe)
+
+      File.write!(
+        Path.join(dir, "20260701000000_old_unsafe.exs"),
+        String.replace(@unversioned_unsafe, "UnversionedUnsafe", "OldUnsafe")
+      )
+
+      config = Path.join(tmp_dir, ".cerbero.exs")
+      File.write!(config, ~s|[start_after: "20260801000000"]|)
+
+      {code, output} =
+        run([
+          "--snapshot",
+          @snapshot,
+          "--migrations",
+          dir,
+          "--config",
+          config,
+          "--format",
+          "json"
+        ])
+
+      assert code == 1
+
+      files =
+        output
+        |> JSON.decode!()
+        |> Map.fetch!("findings")
+        |> Enum.filter(&(&1["check"] == "unsafe_index_creation"))
+        |> Enum.map(& &1["file"])
+
+      assert Enum.any?(files, &(&1 =~ "unversioned_add_index.exs"))
+      refute Enum.any?(files, &(&1 =~ "old_unsafe.exs"))
+    end
+  end
+
   describe "--down" do
     @down_migration """
     defmodule DownUnsafe do
