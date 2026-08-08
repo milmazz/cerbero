@@ -178,7 +178,17 @@ defmodule Cerbero.CLI.Check do
         |> Enum.map(&%{&1 | operations: &1.down_operations})
 
       {findings, _catalog} = Runner.run(down_pending, catalog_after_up, config)
-      Enum.map(findings, &%{&1 | message: "[down] " <> &1.message})
+
+      # The [down] prefix stays for humans; :direction in metadata is the
+      # machine-readable fact so JSON consumers never parse the prose.
+      Enum.map(
+        findings,
+        &%{
+          &1
+          | message: "[down] " <> &1.message,
+            metadata: Map.put(&1.metadata, :direction, :down)
+        }
+      )
     else
       []
     end
@@ -284,10 +294,16 @@ defmodule Cerbero.CLI.Check do
     {findings, catalog_after_up} = Runner.run(pending, catalog, config)
     findings = findings ++ down_findings(parsed, pending, catalog_after_up, config)
 
+    # The suffix stays for humans; :no_snapshot in metadata is the
+    # machine-readable degraded-mode marker.
     findings =
       Enum.map(
         findings,
-        &%{&1 | message: &1.message <> " [no snapshot: structural checks only, scale unknown]"}
+        &%{
+          &1
+          | message: &1.message <> " [no snapshot: structural checks only, scale unknown]",
+            metadata: Map.put(&1.metadata, :no_snapshot, true)
+        }
       )
 
     summary_line = "no snapshot: structural checks only, scale unknown"

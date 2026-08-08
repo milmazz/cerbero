@@ -7,6 +7,9 @@
       "file": "test/fixtures/migrations/unsafe/20260801000000_add_events_payload_index.exs",
       "line": 5,
       "message": "SHARE lock blocks writes on public.events (~412M rows, stats 2026-07-01) for a full-table scan; use concurrently: true with @disable_ddl_transaction and @disable_migration_lock",
+      "metadata": {
+        "lock": "share"
+      },
       "relations": [
         "public.events"
       ],

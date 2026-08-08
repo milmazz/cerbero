@@ -138,10 +138,15 @@ defmodule Cerbero.Check.RunnerTest do
 
     {findings, _} = Runner.run([m], catalog([table("events")]), config)
 
-    assert [%Finding{check: :unclassified_sql, severity: :info, message: msg}] =
+    assert [%Finding{check: :unclassified_sql, severity: :info, message: msg, metadata: metadata}] =
              Enum.filter(findings, &(&1.check == :unclassified_sql))
 
     assert msg =~ "reviewed by DBA 2026-08-01"
+
+    assert metadata.skipped == %{
+             via: :migration_attribute,
+             reason: "reviewed by DBA 2026-08-01"
+           }
   end
 
   test "severity_overrides floor from config", %{config: config} do
@@ -262,10 +267,11 @@ defmodule Cerbero.Check.RunnerTest do
     m = parse!("20260801000000", ~s|execute "CLUSTER events USING idx"|)
     {findings, _} = Runner.run([m], catalog(), config)
 
-    assert [%Finding{check: :unclassified_sql, severity: :info, message: msg}] =
+    assert [%Finding{check: :unclassified_sql, severity: :info, message: msg, metadata: metadata}] =
              Enum.filter(findings, &(&1.check == :unclassified_sql))
 
     assert msg =~ "(skipped via config)"
+    assert metadata.skipped == %{via: :config}
   end
 
   test "@cerbero_skip wins over severity_overrides, but overrides apply to other migrations",

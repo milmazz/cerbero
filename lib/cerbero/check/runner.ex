@@ -107,7 +107,12 @@ defmodule Cerbero.Check.Runner do
   defp apply_skip(%Finding{} = finding, %Migration{attrs: %{cerbero_skip: skips}}) do
     case List.keyfind(skips, finding.check, 0) do
       {_, reason} ->
-        %{finding | severity: :info, message: finding.message <> " (skipped: #{reason})"}
+        %{
+          finding
+          | severity: :info,
+            message: finding.message <> " (skipped: #{reason})",
+            metadata: Map.put(finding.metadata, :skipped, %{via: :migration_attribute, reason: reason})
+        }
 
       nil ->
         finding
@@ -116,7 +121,12 @@ defmodule Cerbero.Check.Runner do
 
   defp apply_config_skip(%Finding{} = finding, check_module_id, %Config{skip_checks: skip_checks}) do
     if Enum.member?(skip_checks, check_module_id) do
-      %{finding | severity: :info, message: finding.message <> " (skipped via config)"}
+      %{
+        finding
+        | severity: :info,
+          message: finding.message <> " (skipped via config)",
+          metadata: Map.put(finding.metadata, :skipped, %{via: :config})
+      }
     else
       finding
     end
