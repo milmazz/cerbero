@@ -67,7 +67,10 @@ defmodule Cerbero.Check.MetaFindings do
           "operation class #{effect.class} has no lock-table entry; " <>
             "judged conservatively as ACCESS EXCLUSIVE + rewrite",
           migration,
-          effect.line
+          effect.line,
+          # The conservative default claims ACCESS EXCLUSIVE in its message;
+          # carrying effect.lock keeps the attestation annotation honest.
+          metadata: %{lock: effect.lock}
         )
         | check: :unmapped_operation
       }

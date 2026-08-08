@@ -186,6 +186,21 @@ defmodule Cerbero.Check.RunnerTest do
     assert msg_on == msg_off <> " (lock_timeout attested in .cerbero.exs)"
   end
 
+  test "lock_timeout_attested annotates raw_ddl_safety's unresolved-target note via lock metadata",
+       %{config: config} do
+    # An unresolvable raw DROP INDEX (no such index in the catalog) falls back
+    # to the unowned-but-not-silent :info note, which names a concrete lock
+    # and says "set a lock_timeout" — attestation must reach it.
+    m = parse!("20260801000000", ~s|execute "DROP INDEX no_such_idx"|)
+    config_on = %{config | lock_timeout_attested: true}
+
+    {findings, _} = Runner.run([m], catalog(), config_on, [Cerbero.Check.RawDDLSafety])
+
+    assert [%Finding{check: :raw_ddl_safety, severity: :info, message: msg}] = findings
+    assert msg =~ "cannot resolve the table"
+    assert String.ends_with?(msg, " (lock_timeout attested in .cerbero.exs)")
+  end
+
   test "lock_timeout_attested annotates SHARE ROW EXCLUSIVE findings (fk_validation_scan) via lock metadata",
        %{config: config} do
     m =
