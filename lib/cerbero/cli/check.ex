@@ -347,9 +347,9 @@ defmodule Cerbero.CLI.Check do
   # on the behaviour; a module without it is described by its id). SnapshotHealth
   # is not in default_checks — it runs outside the Runner fold — but its
   # findings reach the same output, so it is described here too.
-  # Code.ensure_loaded? matters: Mix tasks run interactive, so a module not
-  # yet referenced this VM would flunk function_exported? and silently lose
-  # its description.
+  # The mod.id() call below forces each module load (Mix tasks run the VM
+  # interactive), so the function_exported? check that follows is reliable
+  # without an ensure_loaded? guard.
   defp rule_descriptions(config) do
     modules = Runner.default_checks() ++ config.extra_checks ++ [SnapshotHealth]
 
@@ -357,7 +357,7 @@ defmodule Cerbero.CLI.Check do
     |> Map.new(fn mod ->
       id = Atom.to_string(mod.id())
 
-      if Code.ensure_loaded?(mod) and function_exported?(mod, :description, 0) do
+      if function_exported?(mod, :description, 0) do
         {id, mod.description()}
       else
         {id, id}
