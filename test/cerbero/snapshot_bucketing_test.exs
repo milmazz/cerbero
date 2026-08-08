@@ -72,7 +72,7 @@ defmodule Cerbero.Snapshot.BucketingTest do
 
     test "bucketed output still passes strict decode after stamping" do
       raw = build(%{"tables" => [table("events", %{"n_live_tup" => 412_000_000})]})
-      bucketed = raw |> Cerbero.Snapshot.Bucketing.apply() |> Cerbero.Snapshot.stamp()
+      bucketed = raw |> Bucketing.apply() |> Cerbero.Snapshot.stamp()
       assert {:ok, snapshot} = Cerbero.Snapshot.decode(bucketed)
       assert [%{n_live_tup: 100_000_000}] = snapshot.tables
     end

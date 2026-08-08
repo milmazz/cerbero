@@ -18,7 +18,7 @@ defmodule Cerbero.CLI.Snapshot do
   """
 
   alias Cerbero.{Config, Snapshot}
-  alias Cerbero.Snapshot.Exporter
+  alias Cerbero.Snapshot.{Exporter, Signature}
 
   @switches [
     url: :string,
@@ -61,7 +61,7 @@ defmodule Cerbero.CLI.Snapshot do
   # Keypair generation for snapshot signing: seed (base64) to the file,
   # public key to stdout for .cerbero.exs snapshot_verify_keys.
   defp gen_signing_key(path, io) do
-    {pub, seed} = Cerbero.Snapshot.Signature.generate()
+    {pub, seed} = Signature.generate()
     File.write!(path, seed <> "\n")
     File.chmod(path, 0o600)
     IO.write(io, "cerbero: wrote #{path}\npublic key: #{pub}\n")
@@ -149,7 +149,7 @@ defmodule Cerbero.CLI.Snapshot do
   defp maybe_sign(raw, nil), do: raw
 
   defp maybe_sign(raw, seed),
-    do: raw |> Snapshot.stamp() |> Cerbero.Snapshot.Signature.sign(seed)
+    do: raw |> Snapshot.stamp() |> Signature.sign(seed)
 
   defp error(io, reason) do
     IO.write(io, "cerbero: error: #{inspect(reason)}\n")

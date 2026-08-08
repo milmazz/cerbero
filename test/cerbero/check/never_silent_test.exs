@@ -24,6 +24,7 @@ defmodule Cerbero.Check.NeverSilentTest do
   alias Cerbero.Check.Runner
   alias Cerbero.DDL.Locks
   alias Cerbero.Migration.Parser
+  alias Cerbero.Test.SnapshotBuilder
 
   @write_blocking [:access_exclusive, :share, :share_row_exclusive]
 
@@ -146,7 +147,7 @@ defmodule Cerbero.Check.NeverSilentTest do
       )
 
     tables = [big_events_table(), orgs_table()]
-    snapshot = Cerbero.Test.SnapshotBuilder.build_snapshot(%{"tables" => tables})
+    snapshot = SnapshotBuilder.build_snapshot(%{"tables" => tables})
 
     staleness = %Cerbero.Snapshot.Staleness{
       age_days: 1,
@@ -162,10 +163,10 @@ defmodule Cerbero.Check.NeverSilentTest do
   end
 
   defp orgs_table do
-    Cerbero.Test.SnapshotBuilder.table("orgs", %{
+    SnapshotBuilder.table("orgs", %{
       "n_live_tup" => 41_000_000,
       "reltuples" => 41_000_000.0,
-      "columns" => [Cerbero.Test.SnapshotBuilder.column("id", %{"not_null" => true})]
+      "columns" => [SnapshotBuilder.column("id", %{"not_null" => true})]
     })
   end
 end

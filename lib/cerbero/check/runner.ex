@@ -25,8 +25,9 @@ defmodule Cerbero.Check.Runner do
     applied = MapSet.new(applied_versions)
 
     migrations
-    |> Enum.reject(&MapSet.member?(applied, &1.version))
-    |> Enum.reject(fn m -> start_after != nil and m.version <= start_after end)
+    |> Enum.reject(fn m ->
+      MapSet.member?(applied, m.version) or (start_after != nil and m.version <= start_after)
+    end)
     |> Enum.sort_by(& &1.version)
   end
 

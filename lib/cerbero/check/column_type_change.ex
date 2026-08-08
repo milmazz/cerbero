@@ -73,39 +73,42 @@ defmodule Cerbero.Check.ColumnTypeChange do
   defp judge(_table, _col, _current, nil, _line, _m, _cat, _cfg), do: []
 
   defp judge(table, col, %{type: current}, new_type, line, migration, catalog, config) do
-    qualified = Catalog.qualify(table)
-
     if catalog.engine == :cockroachdb do
-      crdb_judge(table, qualified, col, line, migration, catalog)
+      crdb_judge(table, Catalog.qualify(table), col, line, migration, catalog)
     else
-      scale = Catalog.scale(catalog, table)
-      traffic = Catalog.traffic(catalog, table, config)
-      coercible = binary_coercible?(current, new_type)
-      cost = if coercible, do: :metadata_only, else: :rewrite
+      pg_judge(table, col, current, new_type, line, migration, catalog, config)
+    end
+  end
 
-      severity =
-        Severity.assess(:access_exclusive, cost, scale, traffic, config, catalog.multiplier)
+  defp pg_judge(table, col, current, new_type, line, migration, catalog, config) do
+    qualified = Catalog.qualify(table)
+    scale = Catalog.scale(catalog, table)
+    traffic = Catalog.traffic(catalog, table, config)
+    coercible = binary_coercible?(current, new_type)
+    cost = if coercible, do: :metadata_only, else: :rewrite
 
-      if severity == :none do
-        []
-      else
-        message =
-          if coercible do
-            "#{qualified}.#{col} #{current} -> #{new_type} is binary-coercible (metadata only) " <>
-              "but still takes ACCESS EXCLUSIVE — acquisition queues behind long-running queries; set a lock_timeout"
-          else
-            indexes = indexes_on(catalog, table, col)
+    severity =
+      Severity.assess(:access_exclusive, cost, scale, traffic, config, catalog.multiplier)
 
-            "#{qualified}.#{col} #{current} -> #{new_type} rewrites the table " <>
-              "(#{Helpers.describe_scale(catalog, table)}) under ACCESS EXCLUSIVE" <>
-              case indexes do
-                [] -> ""
-                names -> ", plus rebuilds of: #{Enum.join(names, ", ")}"
-              end
-          end
+    if severity == :none do
+      []
+    else
+      message =
+        if coercible do
+          "#{qualified}.#{col} #{current} -> #{new_type} is binary-coercible (metadata only) " <>
+            "but still takes ACCESS EXCLUSIVE — acquisition queues behind long-running queries; set a lock_timeout"
+        else
+          indexes = indexes_on(catalog, table, col)
 
-        [Helpers.finding(__MODULE__, severity, message, migration, line, relations: [qualified])]
-      end
+          "#{qualified}.#{col} #{current} -> #{new_type} rewrites the table " <>
+            "(#{Helpers.describe_scale(catalog, table)}) under ACCESS EXCLUSIVE" <>
+            case indexes do
+              [] -> ""
+              names -> ", plus rebuilds of: #{Enum.join(names, ", ")}"
+            end
+        end
+
+      [Helpers.finding(__MODULE__, severity, message, migration, line, relations: [qualified])]
     end
   end
 

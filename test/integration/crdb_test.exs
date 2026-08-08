@@ -36,7 +36,7 @@ defmodule Cerbero.Integration.CRDBTest do
   @url "postgresql://root@localhost:26257/defaultdb?sslmode=disable"
 
   up? =
-    case :gen_tcp.connect(~c"localhost", 26257, [active: false], 300) do
+    case :gen_tcp.connect(~c"localhost", 26_257, [active: false], 300) do
       {:ok, socket} ->
         :gen_tcp.close(socket)
         true

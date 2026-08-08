@@ -2,6 +2,8 @@ defmodule Cerbero.CLI.CheckTest do
   use ExUnit.Case, async: false
 
   alias Cerbero.CLI.Check
+  alias Cerbero.Snapshot.Signature
+  alias Cerbero.Test.SnapshotBuilder
 
   @snapshot "test/fixtures/snapshots/huge_table.json"
   @migrations "test/fixtures/migrations/unsafe"
@@ -194,7 +196,7 @@ defmodule Cerbero.CLI.CheckTest do
     tmp_dir: tmp_dir
   } do
     raw =
-      Cerbero.Test.SnapshotBuilder.build(%{
+      SnapshotBuilder.build(%{
         "engine" => %{"name" => "postgres", "version" => "12.9", "version_num" => 120_000}
       })
 
@@ -211,7 +213,7 @@ defmodule Cerbero.CLI.CheckTest do
   @tag :tmp_dir
   test "an order-of-magnitude snapshot annotates the summary line", %{tmp_dir: tmp_dir} do
     raw =
-      Cerbero.Test.SnapshotBuilder.build(%{
+      SnapshotBuilder.build(%{
         "precision" => "order_of_magnitude",
         "collected_at" => "2026-07-01T00:00:00Z"
       })
@@ -231,7 +233,7 @@ defmodule Cerbero.CLI.CheckTest do
     test "snapshot_verify_keys in config rejects an unsigned snapshot at exit 2", %{
       tmp_dir: tmp_dir
     } do
-      {pub, _seed} = Cerbero.Snapshot.Signature.generate()
+      {pub, _seed} = Signature.generate()
       config = Path.join(tmp_dir, ".cerbero.exs")
       File.write!(config, ~s|[snapshot_verify_keys: ["#{pub}"]]|)
 

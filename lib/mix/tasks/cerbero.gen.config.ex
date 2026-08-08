@@ -30,9 +30,11 @@ defmodule Mix.Tasks.Cerbero.Gen.Config do
   """
   use Mix.Task
 
+  alias Cerbero.CLI
+
   @impl true
   def run(argv) do
-    case Cerbero.CLI.GenConfig.run(argv) do
+    case CLI.GenConfig.run(argv) do
       0 -> :ok
       code -> exit({:shutdown, code})
     end

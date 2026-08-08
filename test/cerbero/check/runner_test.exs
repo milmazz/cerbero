@@ -21,7 +21,7 @@ defmodule Cerbero.Check.RunnerTest do
   use ExUnit.Case, async: true
 
   alias Cerbero.{Catalog, Config, Finding, Migration}
-  alias Cerbero.Check.Runner
+  alias Cerbero.Check.{Helpers, Runner}
   alias Cerbero.Migration.Parser
   import Cerbero.Test.SnapshotBuilder
 
@@ -188,10 +188,10 @@ defmodule Cerbero.Check.RunnerTest do
   end
 
   test "helpers: human_rows" do
-    assert Cerbero.Check.Helpers.human_rows(412_000_000) == "412M"
-    assert Cerbero.Check.Helpers.human_rows(41_000_000) == "41M"
-    assert Cerbero.Check.Helpers.human_rows(600_000) == "600k"
-    assert Cerbero.Check.Helpers.human_rows(97) == "97"
+    assert Helpers.human_rows(412_000_000) == "412M"
+    assert Helpers.human_rows(41_000_000) == "41M"
+    assert Helpers.human_rows(600_000) == "600k"
+    assert Helpers.human_rows(97) == "97"
   end
 
   test "config.skip_checks demotes findings to info without silencing them", %{config: config} do
