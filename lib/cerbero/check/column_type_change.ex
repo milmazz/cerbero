@@ -108,7 +108,12 @@ defmodule Cerbero.Check.ColumnTypeChange do
             end
         end
 
-      [Helpers.finding(__MODULE__, severity, message, migration, line, relations: [qualified])]
+      [
+        Helpers.finding(__MODULE__, severity, message, migration, line,
+          relations: [qualified],
+          metadata: %{lock: :access_exclusive}
+        )
+      ]
     end
   end
 

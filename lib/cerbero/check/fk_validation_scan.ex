@@ -96,7 +96,8 @@ defmodule Cerbero.Check.FKValidationScan do
           message,
           migration,
           line,
-          relations: Enum.reject([q_ing, q_ed], &is_nil/1)
+          relations: Enum.reject([q_ing, q_ed], &is_nil/1),
+          metadata: %{lock: :share_row_exclusive}
         )
       ]
     else

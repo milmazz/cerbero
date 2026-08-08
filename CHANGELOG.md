@@ -138,6 +138,12 @@ It does not certify migrations as safe; it judges the statement, not the moment.
 
 ### Fixed
 
+- The `lock_timeout_attested` annotation now keys on structured lock metadata
+  (`Finding.metadata.lock`, declared by each rule) instead of matching finding
+  message text for `"lock_timeout"` / `"ACCESS EXCLUSIVE"`. The string match
+  missed `fk_validation_scan` findings entirely — their SHARE ROW EXCLUSIVE
+  messages contained neither string — so attested teams never saw the
+  annotation there, and any wording edit could silently flip attestation.
 - `severity_overrides` and `skip_checks` now reach `snapshot_health` findings.
   Those findings are produced outside the per-migration check runner (they
   judge the snapshot, not a migration), so the documented
