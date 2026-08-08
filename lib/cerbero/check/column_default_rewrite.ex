@@ -11,6 +11,9 @@ defmodule Cerbero.Check.ColumnDefaultRewrite do
   def id, do: :column_default_rewrite
 
   @impl true
+  def description, do: "Adding a column with a default that forces a full-table rewrite under an exclusive lock"
+
+  @impl true
   def run(migration, catalog, config) do
     Helpers.fold_operations(migration, catalog, fn op, cat ->
       op

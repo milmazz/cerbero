@@ -31,6 +31,9 @@ defmodule Cerbero.Check.ColumnTypeChange do
   @impl true
   def id, do: :column_type_change
 
+  @impl true
+  def description, do: "Column type change that rewrites the table or rebuilds indexes at production scale"
+
   # Ecto DSL type -> formatted PG type (as pg_catalog formats it).
   @dsl_types %{
     integer: "integer",

@@ -9,6 +9,9 @@ defmodule Cerbero.Check.CRDBTransactionalDDL do
   @impl true
   def id, do: :crdb_transactional_ddl
 
+  @impl true
+  def description, do: "DDL that CockroachDB rejects or restricts inside a transaction"
+
   @dml_classes [:dml_update, :dml_delete, :dml_insert_select]
 
   @impl true

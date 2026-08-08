@@ -11,6 +11,9 @@ defmodule Cerbero.Check.DMLInMigration do
   def id, do: :dml_in_migration
 
   @impl true
+  def description, do: "Data-modifying statement inside a schema migration"
+
+  @impl true
   def run(migration, catalog, config) do
     for %Op.RawSQL{classified: classified, line: line} <- migration.operations,
         %Classified{class: kind, table: table} <- classified,

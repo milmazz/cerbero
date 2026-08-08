@@ -14,6 +14,9 @@ defmodule Cerbero.Check.MetaFindings do
   def id, do: :meta_findings
 
   @impl true
+  def description, do: "Operation cerbero cannot fully judge; warned, never silenced"
+
+  @impl true
   def run(migration, catalog, _config) do
     Enum.flat_map(migration.operations, fn
       %Op.RawSQL{classified: classified, line: line} = op ->

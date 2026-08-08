@@ -1,3 +1,46 @@
+defmodule Cerbero.CLI.CheckTest.DescribedCheck do
+  @moduledoc false
+  @behaviour Cerbero.Check
+
+  @impl true
+  def id, do: :described_check
+
+  @impl true
+  def description, do: "A third-party check that describes itself"
+
+  @impl true
+  def run(migration, _catalog, _config) do
+    [
+      %Cerbero.Finding{
+        check: :described_check,
+        severity: :warning,
+        message: "described finding",
+        file: migration.file
+      }
+    ]
+  end
+end
+
+defmodule Cerbero.CLI.CheckTest.UndescribedCheck do
+  @moduledoc false
+  @behaviour Cerbero.Check
+
+  @impl true
+  def id, do: :undescribed_check
+
+  @impl true
+  def run(migration, _catalog, _config) do
+    [
+      %Cerbero.Finding{
+        check: :undescribed_check,
+        severity: :warning,
+        message: "undescribed finding",
+        file: migration.file
+      }
+    ]
+  end
+end
+
 defmodule Cerbero.CLI.CheckTest do
   use ExUnit.Case, async: false
 
@@ -460,6 +503,47 @@ defmodule Cerbero.CLI.CheckTest do
       assert finding["metadata"]["direction"] == "down"
       # merged, not clobbered: the rule's own lock metadata survives
       assert finding["metadata"]["lock"] == "share"
+    end
+  end
+
+  describe "check descriptions in SARIF rules" do
+    @tag :tmp_dir
+    test "an extra check exporting description/0 shows it; one without falls back to its id", %{
+      tmp_dir: tmp_dir
+    } do
+      config = Path.join(tmp_dir, ".cerbero.exs")
+
+      File.write!(config, """
+      [
+        extra_checks: [
+          Cerbero.CLI.CheckTest.DescribedCheck,
+          Cerbero.CLI.CheckTest.UndescribedCheck
+        ]
+      ]
+      """)
+
+      {_code, output} =
+        run([
+          "--snapshot",
+          @snapshot,
+          "--migrations",
+          @migrations,
+          "--config",
+          config,
+          "--format",
+          "sarif"
+        ])
+
+      [sarif_run] = JSON.decode!(output)["runs"]
+
+      by_id =
+        Map.new(sarif_run["tool"]["driver"]["rules"], &{&1["id"], &1["shortDescription"]["text"]})
+
+      assert by_id["described_check"] == "A third-party check that describes itself"
+      assert by_id["undescribed_check"] == "undescribed_check"
+      # Builtin descriptions still arrive end-to-end from the check modules.
+      assert by_id["unsafe_index_creation"] ==
+               "Non-concurrent index creation takes a SHARE lock that blocks writes for a full-table scan"
     end
   end
 

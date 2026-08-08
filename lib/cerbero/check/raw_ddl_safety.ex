@@ -33,6 +33,9 @@ defmodule Cerbero.Check.RawDDLSafety do
   @impl true
   def id, do: :raw_ddl_safety
 
+  @impl true
+  def description, do: "Raw DDL judged by lock mode and cost class against production scale"
+
   # Classes a dedicated rule already judges end-to-end for raw SQL — never
   # double-report these. (DSL forms of the same classes are unaffected: this
   # rule never sees DSL operations at all, see moduledoc.)

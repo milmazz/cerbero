@@ -11,8 +11,13 @@ defmodule Cerbero.CLI.Format.SARIFTest do
     "warnings" => 0
   }
 
-  defp doc(findings, snapshot_path \\ nil) do
-    findings |> SARIF.render(@summary, snapshot_path) |> JSON.decode!()
+  @descriptions %{
+    "snapshot_health" => "The snapshot itself is degraded: stale, divergent, invalid indexes, or standby stats",
+    "unsafe_index_creation" => "Non-concurrent index creation takes a SHARE lock that blocks writes for a full-table scan"
+  }
+
+  defp doc(findings, snapshot_path \\ nil, descriptions \\ @descriptions) do
+    findings |> SARIF.render(@summary, snapshot_path, descriptions) |> JSON.decode!()
   end
 
   defp run(doc), do: hd(doc["runs"])
@@ -150,10 +155,22 @@ defmodule Cerbero.CLI.Format.SARIFTest do
     end
   end
 
-  test "an unknown (third-party) check id falls back to the id as its description" do
+  test "an id absent from the descriptions map falls back to the id as its description" do
     d = doc([finding(check: :my_custom_check)])
     [rule] = run(d)["tool"]["driver"]["rules"]
     assert rule["shortDescription"]["text"] == "my_custom_check"
+  end
+
+  test "descriptions come from the caller, not a catalog inside SARIF" do
+    d =
+      doc(
+        [finding(check: :my_custom_check)],
+        nil,
+        %{"my_custom_check" => "A third-party check that describes itself"}
+      )
+
+    [rule] = run(d)["tool"]["driver"]["rules"]
+    assert rule["shortDescription"]["text"] == "A third-party check that describes itself"
   end
 
   test "relations and engine ride in result properties; engine omitted when nil" do

@@ -14,6 +14,9 @@ defmodule Cerbero.Check.ConcurrentIndexRequiresAttributes do
   def id, do: :concurrent_index_requires_attributes
 
   @impl true
+  def description, do: "concurrently: true requires @disable_ddl_transaction and @disable_migration_lock"
+
+  @impl true
   def run(migration, _catalog, _config) do
     %{disable_ddl_transaction: ddl, disable_migration_lock: lock} = migration.attrs
 

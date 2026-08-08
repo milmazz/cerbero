@@ -104,6 +104,7 @@ defmodule Cerbero.CLI.Check do
          {:ok, result} <- collect(parsed, config, migrations, clock) do
       render(
         parsed,
+        config,
         result.findings,
         result.summary_line,
         result.summary,
@@ -148,7 +149,7 @@ defmodule Cerbero.CLI.Check do
         "repos" => Map.new(per_repo, fn {repo, r} -> {repo.name, r.summary["snapshot"]} end)
       }
 
-      render(parsed, findings, summary_line, summary, fail_on, nil)
+      render(parsed, config, findings, summary_line, summary, fail_on, nil)
     end
   end
 
@@ -318,12 +319,12 @@ defmodule Cerbero.CLI.Check do
     {:ok, %{findings: findings, summary_line: summary_line, summary: summary, snapshot_path: nil}}
   end
 
-  defp render(parsed, findings, summary_line, summary, fail_on, snapshot_path) do
+  defp render(parsed, config, findings, summary_line, summary, fail_on, snapshot_path) do
     output =
       case parsed[:format] || "human" do
         "human" -> Format.Human.render(findings, summary_line, parsed[:verbose] || false)
         "json" -> Format.JSON.render(findings, summary)
-        "sarif" -> Format.SARIF.render(findings, summary, snapshot_path)
+        "sarif" -> Format.SARIF.render(findings, summary, snapshot_path, rule_descriptions(config))
         other -> {:error, "invalid --format: #{other}"}
       end
 
@@ -331,6 +332,38 @@ defmodule Cerbero.CLI.Check do
       exit_code = if Enum.any?(findings, &Finding.at_least?(&1.severity, fail_on)), do: 1, else: 0
       {:ok, out, exit_code}
     end
+  end
+
+  # MetaFindings emits three finding ids that are not any module's id/0;
+  # no module owns them, so their descriptions live here — and only these
+  # three. Everything else comes from the check modules themselves.
+  @meta_descriptions %{
+    "unclassified_sql" => "Raw SQL the classifier cannot classify; judged conservatively",
+    "unknown_operation" => "Migration operation the parser does not recognize",
+    "unmapped_operation" => "Classified SQL with no lock-table entry; judged conservatively"
+  }
+
+  # Assembled from the configured check modules (`description/0` is optional
+  # on the behaviour; a module without it is described by its id). SnapshotHealth
+  # is not in default_checks — it runs outside the Runner fold — but its
+  # findings reach the same output, so it is described here too.
+  # Code.ensure_loaded? matters: Mix tasks run interactive, so a module not
+  # yet referenced this VM would flunk function_exported? and silently lose
+  # its description.
+  defp rule_descriptions(config) do
+    modules = Runner.default_checks() ++ config.extra_checks ++ [SnapshotHealth]
+
+    modules
+    |> Map.new(fn mod ->
+      id = Atom.to_string(mod.id())
+
+      if Code.ensure_loaded?(mod) and function_exported?(mod, :description, 0) do
+        {id, mod.description()}
+      else
+        {id, id}
+      end
+    end)
+    |> Map.merge(@meta_descriptions)
   end
 
   defp count(findings, severity), do: Enum.count(findings, &(&1.severity == severity))

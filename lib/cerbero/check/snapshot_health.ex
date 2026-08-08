@@ -17,6 +17,11 @@ defmodule Cerbero.Check.SnapshotHealth do
 
   def id, do: @id
 
+  # Not `@impl Cerbero.Check`: this module deliberately does not adopt the
+  # behaviour (it runs outside the Runner fold), but it still describes
+  # itself the same way regular checks do.
+  def description, do: "The snapshot itself is degraded: stale, divergent, invalid indexes, or standby stats"
+
   @spec run_global(
           Snapshot.t(),
           Staleness.t(),
