@@ -139,10 +139,11 @@ It does not certify migrations as safe; it judges the statement, not the moment.
   `"metadata"` object (empty `{}` when there is none) recording as data what
   the message strings already say in prose — `direction: "down"` for
   `--down` findings, `no_snapshot: true` in structural mode,
-  `skipped: {"via": "migration_attribute", "reason": ...}` /
-  `skipped: {"via": "config"}` for demoted findings, plus the judged `lock`
-  each rule declares — so JSON consumers can filter without parsing
-  messages. Backward-compatible addition; `cerbero_findings_version`
+  `skipped: {"via": ["migration_attribute"], "reason": ...}` /
+  `skipped: {"via": ["config"]}` for demoted findings (`via` is a list in
+  application order, so a finding skipped through both routes keeps both
+  provenances and the reason), plus the judged `lock` each rule declares —
+  so JSON consumers can filter without parsing messages. Backward-compatible addition; `cerbero_findings_version`
   stays 1. Human and SARIF outputs are unchanged.
 - Checks describe themselves: the `Cerbero.Check` behaviour gained an
   optional `description/0` callback (a one-line summary of what the check

@@ -43,7 +43,7 @@ defmodule Cerbero.CLI.Format.JSONTest do
             direction: :down,
             lock: :share,
             no_snapshot: true,
-            skipped: %{via: :migration_attribute, reason: "reviewed by DBA"}
+            skipped: %{via: [:migration_attribute], reason: "reviewed by DBA"}
           }
         )
       ])
@@ -52,7 +52,7 @@ defmodule Cerbero.CLI.Format.JSONTest do
              "direction" => "down",
              "lock" => "share",
              "no_snapshot" => true,
-             "skipped" => %{"via" => "migration_attribute", "reason" => "reviewed by DBA"}
+             "skipped" => %{"via" => ["migration_attribute"], "reason" => "reviewed by DBA"}
            }
   end
 

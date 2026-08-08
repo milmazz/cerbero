@@ -1,5 +1,28 @@
 defmodule Cerbero.Finding do
-  @moduledoc "One judged fact: mechanism + scale + provenance, with source location."
+  @moduledoc """
+  One judged fact: mechanism + scale + provenance, with source location.
+
+  ## The `metadata` contract
+
+  `metadata` records as data what the message says in prose. It is
+  serialized verbatim into `--format json` output through the canonical
+  encoder, so every value must be JSON-encodable: maps (atom or string
+  keys), lists, strings, atoms (encoded as strings), numbers, booleans —
+  never tuples, PIDs, refs, functions, or structs. A non-encodable value
+  raises at render time instead of the CLI's usual exit-2 error path, so
+  third-party checks (`extra_checks`) must respect this.
+
+  Reserved keys, written by the runner/CLI machinery — set them only with
+  their documented meaning:
+
+    * `:lock` — the lock mode a rule judged (`Cerbero.DDL.Effect` lock
+      atom); the lock-timeout attestation keys on it.
+    * `:skipped` — `%{via: [:migration_attribute | :config, ...]}` in
+      application order, plus `:reason` for `@cerbero_skip`; written by
+      the runner when a finding is demoted.
+    * `:direction` — `:down` on `--down` findings.
+    * `:no_snapshot` — `true` in structural (no-snapshot) mode.
+  """
 
   @enforce_keys [:check, :severity, :message]
   defstruct [:check, :severity, :message, :file, :line, relations: [], engine: nil, metadata: %{}]
