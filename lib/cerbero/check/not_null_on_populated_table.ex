@@ -4,6 +4,7 @@ defmodule Cerbero.Check.NotNullOnPopulatedTable do
 
   alias Cerbero.Catalog
   alias Cerbero.Check.Helpers
+  alias Cerbero.Check.Judgment
   alias Cerbero.Operation, as: Op
   alias Cerbero.Severity
   alias Cerbero.SQL.Classifier.Classified
@@ -66,37 +67,19 @@ defmodule Cerbero.Check.NotNullOnPopulatedTable do
         crdb_finding(table, column, line, migration, catalog, config)
 
       true ->
-        scale = Catalog.scale(catalog, table)
-        traffic = Catalog.traffic(catalog, table, config)
-
-        severity =
-          Severity.assess(
-            :access_exclusive,
-            :full_scan,
-            scale,
-            traffic,
-            config,
-            catalog.multiplier
-          )
-
-        if severity == :none do
-          []
-        else
-          [
-            Helpers.finding(
-              __MODULE__,
-              severity,
-              "SET NOT NULL on #{qualified}.#{column} (#{Helpers.describe_scale(catalog, table)}) " <>
-                "forces a full-table scan under ACCESS EXCLUSIVE. Two-step instead: " <>
-                "ADD CONSTRAINT ... CHECK (#{column} IS NOT NULL) NOT VALID, then VALIDATE CONSTRAINT " <>
-                "in a later migration; on PG >= 12 the final SET NOT NULL then skips the scan",
-              migration,
-              line,
-              relations: [qualified],
-              metadata: %{lock: :access_exclusive}
-            )
-          ]
-        end
+        Judgment.judge(
+          __MODULE__,
+          %{table: table, lock: :access_exclusive, cost: :full_scan, line: line},
+          migration,
+          catalog,
+          config,
+          message: fn ->
+            "SET NOT NULL on #{qualified}.#{column} (#{Helpers.describe_scale(catalog, table)}) " <>
+              "forces a full-table scan under ACCESS EXCLUSIVE. Two-step instead: " <>
+              "ADD CONSTRAINT ... CHECK (#{column} IS NOT NULL) NOT VALID, then VALIDATE CONSTRAINT " <>
+              "in a later migration; on PG >= 12 the final SET NOT NULL then skips the scan"
+          end
+        )
     end
   end
 
