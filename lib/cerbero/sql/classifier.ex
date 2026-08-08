@@ -23,7 +23,7 @@ defmodule Cerbero.SQL.Classifier do
   """
 
   defmodule Classified do
-    @moduledoc false
+    @moduledoc "One classified raw SQL statement: its class plus the identifiers the patterns captured."
     defstruct class: :unknown,
               table: nil,
               column: nil,
@@ -33,11 +33,13 @@ defmodule Cerbero.SQL.Classifier do
               unique: false,
               ref_table: nil,
               volatile_default: false
+
+    @type t :: %__MODULE__{}
   end
 
   @ident ~S{((?:"[^"]+"|[a-z_][a-z0-9_$]*)(?:\.(?:"[^"]+"|[a-z_][a-z0-9_$]*))?)}
 
-  @spec classify(String.t()) :: [%Classified{}]
+  @spec classify(String.t()) :: [Classified.t()]
   def classify(sql) when is_binary(sql) do
     sql
     |> split_statements()

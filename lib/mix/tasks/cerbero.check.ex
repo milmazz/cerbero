@@ -51,9 +51,11 @@ defmodule Mix.Tasks.Cerbero.Check do
   """
   use Mix.Task
 
+  alias Cerbero.CLI
+
   @impl true
   def run(argv) do
-    case Cerbero.CLI.Check.run(argv) do
+    case CLI.Check.run(argv) do
       0 -> :ok
       code -> exit({:shutdown, code})
     end

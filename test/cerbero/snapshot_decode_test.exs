@@ -2,6 +2,7 @@ defmodule Cerbero.SnapshotDecodeTest do
   use ExUnit.Case, async: true
 
   alias Cerbero.Snapshot
+  alias Cerbero.Test.SnapshotBuilder
   import Cerbero.Test.SnapshotBuilder
 
   @fixture "test/fixtures/snapshots/huge_table.json"
@@ -113,7 +114,7 @@ defmodule Cerbero.SnapshotDecodeTest do
 
   describe "engine floors" do
     defp with_engine(name, version, version_num) do
-      Cerbero.Test.SnapshotBuilder.build(%{
+      SnapshotBuilder.build(%{
         "engine" => %{"name" => name, "version" => version, "version_num" => version_num}
       })
     end

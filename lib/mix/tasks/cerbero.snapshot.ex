@@ -64,11 +64,13 @@ defmodule Mix.Tasks.Cerbero.Snapshot do
   """
   use Mix.Task
 
+  alias Cerbero.CLI
+
   @impl true
   def run(argv) do
     Mix.Task.run("app.start")
 
-    case Cerbero.CLI.Snapshot.run(argv) do
+    case CLI.Snapshot.run(argv) do
       0 -> :ok
       code -> exit({:shutdown, code})
     end

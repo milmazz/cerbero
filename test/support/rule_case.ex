@@ -1,6 +1,8 @@
 defmodule Cerbero.Test.RuleCase do
   @moduledoc "Shared scaffolding for rule tests: parse inline source, judge against a built snapshot."
 
+  alias Cerbero.Test.SnapshotBuilder
+
   defmacro __using__(_) do
     quote do
       use ExUnit.Case, async: true
@@ -27,9 +29,7 @@ defmodule Cerbero.Test.RuleCase do
       )
 
     snapshot =
-      Cerbero.Test.SnapshotBuilder.build_snapshot(
-        Map.merge(%{"tables" => tables}, snapshot_overrides)
-      )
+      SnapshotBuilder.build_snapshot(Map.merge(%{"tables" => tables}, snapshot_overrides))
 
     staleness = %Staleness{age_days: 1, scale_mode: :exact, threshold_multiplier: 1.0}
     catalog = Catalog.from_snapshot(snapshot, staleness)
@@ -41,15 +41,15 @@ defmodule Cerbero.Test.RuleCase do
   end
 
   def big_events_table do
-    Cerbero.Test.SnapshotBuilder.table("events", %{
+    SnapshotBuilder.table("events", %{
       "n_live_tup" => 412_000_000,
       "reltuples" => 412_000_000.0,
       "heap_bytes" => 219_902_325_555,
       "total_bytes" => 253_403_070_464,
       "last_autoanalyze" => "2026-07-01T00:00:00Z",
       "columns" => [
-        Cerbero.Test.SnapshotBuilder.column("id", %{"not_null" => true}),
-        Cerbero.Test.SnapshotBuilder.column("org_id")
+        SnapshotBuilder.column("id", %{"not_null" => true}),
+        SnapshotBuilder.column("org_id")
       ]
     })
   end

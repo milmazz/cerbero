@@ -3,6 +3,7 @@ defmodule Cerbero.SnapshotTest do
 
   alias Cerbero.Snapshot
   alias Cerbero.Snapshot.Canonical
+  alias Cerbero.Test.SnapshotBuilder
 
   @fixture "test/fixtures/snapshots/huge_table.json"
 
@@ -150,18 +151,18 @@ defmodule Cerbero.SnapshotTest do
 
   describe "precision field" do
     test "decodes precision as a closed enum, defaulting to :exact when absent" do
-      raw = Cerbero.Test.SnapshotBuilder.build(%{})
+      raw = SnapshotBuilder.build(%{})
       assert {:ok, %Cerbero.Snapshot{precision: :exact}} = Cerbero.Snapshot.decode(raw)
 
       bucketed =
-        Cerbero.Test.SnapshotBuilder.build(%{"precision" => "order_of_magnitude"})
+        SnapshotBuilder.build(%{"precision" => "order_of_magnitude"})
 
       assert {:ok, %Cerbero.Snapshot{precision: :order_of_magnitude}} =
                Cerbero.Snapshot.decode(bucketed)
     end
 
     test "rejects out-of-enum precision values" do
-      raw = Cerbero.Test.SnapshotBuilder.build(%{"precision" => "fuzzy"})
+      raw = SnapshotBuilder.build(%{"precision" => "fuzzy"})
 
       assert {:error, {:invalid_value, "$.precision", "fuzzy"}} = Cerbero.Snapshot.decode(raw)
     end

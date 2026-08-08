@@ -9,7 +9,7 @@ defmodule Cerbero.Snapshot do
   a valid signature from one of those keys to load.
   """
 
-  alias Cerbero.Snapshot.Canonical
+  alias Cerbero.Snapshot.{Canonical, Signature}
 
   defstruct [
     :format_version,
@@ -28,6 +28,7 @@ defmodule Cerbero.Snapshot do
   @type t :: %__MODULE__{}
 
   defmodule Table do
+    @moduledoc "One table's decoded catalog metadata: stats, columns, indexes, constraints."
     defstruct [
       :schema,
       :name,
@@ -86,7 +87,7 @@ defmodule Cerbero.Snapshot do
     with {:ok, bytes} <- read(path),
          {:ok, raw} <- decode_json(bytes),
          :ok <- verify_checksum(raw),
-         :ok <- Cerbero.Snapshot.Signature.verify(raw, verify_keys),
+         :ok <- Signature.verify(raw, verify_keys),
          :ok <- gate_version(raw) do
       decode(raw)
     end

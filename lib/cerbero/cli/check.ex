@@ -131,11 +131,7 @@ defmodule Cerbero.CLI.Check do
       # attributable to a repo instead of floating free.
       findings =
         Enum.flat_map(per_repo, fn {_repo, r} ->
-          Enum.map(r.findings, fn f ->
-            if f.file == nil and r.snapshot_path != nil,
-              do: %{f | file: r.snapshot_path},
-              else: f
-          end)
+          Enum.map(r.findings, &anchor_global(&1, r.snapshot_path))
         end)
 
       summary_line =
@@ -152,6 +148,11 @@ defmodule Cerbero.CLI.Check do
       render(parsed, findings, summary_line, summary, fail_on, nil)
     end
   end
+
+  defp anchor_global(%Finding{file: nil} = finding, snapshot_path) when snapshot_path != nil,
+    do: %{finding | file: snapshot_path}
+
+  defp anchor_global(finding, _snapshot_path), do: finding
 
   defp collect(parsed, config, migrations, clock) do
     if parsed[:no_snapshot] do
@@ -222,50 +223,55 @@ defmodule Cerbero.CLI.Check do
   end
 
   defp with_snapshot(parsed, config, migrations, clock) do
-    with {:ok, snapshot} <-
-           Snapshot.load(parsed[:snapshot] || config.snapshot_path,
-             verify_keys: config.snapshot_verify_keys
-           ) do
-      staleness = Staleness.assess(snapshot, clock.(), config)
-      catalog = Catalog.from_snapshot(snapshot, staleness)
-      pending = Runner.select_pending(migrations, snapshot.applied_migrations, config.start_after)
+    case Snapshot.load(parsed[:snapshot] || config.snapshot_path,
+           verify_keys: config.snapshot_verify_keys
+         ) do
+      {:error, reason} ->
+        {:error, "snapshot: #{inspect(reason)}"}
 
-      health =
-        SnapshotHealth.run_global(snapshot, staleness, migrations, pending, catalog, config)
-        |> Runner.apply_policies(SnapshotHealth.id(), config)
-
-      {findings, catalog_after_up} = Runner.run(pending, catalog, config)
-      findings = health ++ findings ++ down_findings(parsed, pending, catalog_after_up, config)
-
-      summary_line =
-        "judged against snapshot of #{snapshot.database}, " <>
-          "#{DateTime.to_date(snapshot.collected_at)}, #{staleness.age_days} days old" <>
-          if(snapshot.precision == :order_of_magnitude,
-            do: " (order-of-magnitude precision)",
-            else: ""
-          )
-
-      summary = %{
-        "errors" => count(findings, :error),
-        "warnings" => count(findings, :warning),
-        "infos" => count(findings, :info),
-        "snapshot" => %{
-          "age_days" => staleness.age_days,
-          "collected_at" => DateTime.to_iso8601(snapshot.collected_at),
-          "database" => snapshot.database
-        }
-      }
-
-      {:ok,
-       %{
-         findings: findings,
-         summary_line: summary_line,
-         summary: summary,
-         snapshot_path: parsed[:snapshot] || config.snapshot_path
-       }}
-    else
-      {:error, reason} -> {:error, "snapshot: #{inspect(reason)}"}
+      {:ok, snapshot} ->
+        judge_with_snapshot(snapshot, parsed, config, migrations, clock)
     end
+  end
+
+  defp judge_with_snapshot(snapshot, parsed, config, migrations, clock) do
+    staleness = Staleness.assess(snapshot, clock.(), config)
+    catalog = Catalog.from_snapshot(snapshot, staleness)
+    pending = Runner.select_pending(migrations, snapshot.applied_migrations, config.start_after)
+
+    health =
+      SnapshotHealth.run_global(snapshot, staleness, migrations, pending, catalog, config)
+      |> Runner.apply_policies(SnapshotHealth.id(), config)
+
+    {findings, catalog_after_up} = Runner.run(pending, catalog, config)
+    findings = health ++ findings ++ down_findings(parsed, pending, catalog_after_up, config)
+
+    summary_line =
+      "judged against snapshot of #{snapshot.database}, " <>
+        "#{DateTime.to_date(snapshot.collected_at)}, #{staleness.age_days} days old" <>
+        if(snapshot.precision == :order_of_magnitude,
+          do: " (order-of-magnitude precision)",
+          else: ""
+        )
+
+    summary = %{
+      "errors" => count(findings, :error),
+      "warnings" => count(findings, :warning),
+      "infos" => count(findings, :info),
+      "snapshot" => %{
+        "age_days" => staleness.age_days,
+        "collected_at" => DateTime.to_iso8601(snapshot.collected_at),
+        "database" => snapshot.database
+      }
+    }
+
+    {:ok,
+     %{
+       findings: findings,
+       summary_line: summary_line,
+       summary: summary,
+       snapshot_path: parsed[:snapshot] || config.snapshot_path
+     }}
   end
 
   defp structural(parsed, config, migrations) do

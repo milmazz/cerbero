@@ -19,7 +19,7 @@ defmodule Cerbero.SQL.ClassifierTest do
              concurrently: true,
              unique: true
            } =
-             one("CREATE UNIQUE INDEX CONCURRENTLY idx ON \"public\".\"events\" (user_id)")
+             one(~s{CREATE UNIQUE INDEX CONCURRENTLY idx ON "public"."events" (user_id)})
   end
 
   test "drop index" do
