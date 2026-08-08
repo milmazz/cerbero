@@ -115,7 +115,7 @@ defmodule Cerbero.Check.SnapshotHealth do
             :warning,
             "migration #{m.version} exists in the repo with version <= max(applied) but is absent from " <>
               "the snapshot's applied list — snapshot and repo disagree about history",
-            m.file,
+            m,
             nil
           )
         end
@@ -140,7 +140,7 @@ defmodule Cerbero.Check.SnapshotHealth do
         "pending migration #{m.version} predates the snapshot (#{DateTime.to_date(collected_at)}) " <>
           "by more than deploy_cadence (#{config.deploy_cadence}d) — it may already be applied " <>
           "(pending vs applied-after-snapshot is offline-indistinguishable); re-export",
-        m.file,
+        m,
         nil
       )
     end
@@ -255,7 +255,7 @@ defmodule Cerbero.Check.SnapshotHealth do
                 :error,
                 "pending migration targets #{Catalog.qualify(table)}, which is absent from the snapshot " <>
                   "and not created by the pending set — absence is never safety; re-export the snapshot",
-                m.file,
+                m,
                 effect.line,
                 relations: [Catalog.qualify(table)]
               )

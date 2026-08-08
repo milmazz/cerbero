@@ -77,11 +77,10 @@ defmodule Cerbero.Check.Helpers do
 
   @doc """
   Finding assembly for every check, in-fold or global. `source` names where
-  the finding anchors: a `%Migration{}` (only its `.file` is read), a bare
-  file path when the caller has no migration struct in hand (SnapshotHealth
-  judges the snapshot against migration *files*), or `nil` for a global
-  finding about no file at all (e.g. snapshot age). Defaults: `relations`
-  `[]`, `engine` `nil`, `metadata` `%{}`.
+  the finding anchors: a `%Migration{}` (only its `.file` is read — pass the
+  struct whenever one is in hand), a bare file path for callers that only
+  hold a path, or `nil` for a global finding about no file at all (e.g.
+  snapshot age). Defaults: `relations` `[]`, `engine` `nil`, `metadata` `%{}`.
   """
   @spec finding(
           module(),
