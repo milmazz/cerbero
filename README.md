@@ -129,4 +129,6 @@ duration estimates, ever. Pending vs. applied-after-snapshot is offline-
 indistinguishable — scheduled re-export is the real mitigation. Lock queues,
 long transactions, and concurrent DDL at deploy time are invisible offline:
 cerbero judges the statement, not the moment. Dynamically-built operations
-surface as `unknown_operation`, never silence. `down` bodies are not judged.
+surface as `unknown_operation`, never silence. `down` bodies are judged only
+on request (`mix cerbero.check --down`); rollback judgments use the post-up
+catalog state in version order, not a one-at-a-time unwind.
