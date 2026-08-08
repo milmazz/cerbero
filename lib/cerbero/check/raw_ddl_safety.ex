@@ -233,7 +233,8 @@ defmodule Cerbero.Check.RawDDLSafety do
         migration,
         effect.line,
         relations: [],
-        engine: catalog.engine
+        engine: catalog.engine,
+        metadata: %{lock: effect.lock}
       )
     ]
   end
