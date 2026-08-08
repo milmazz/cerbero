@@ -78,8 +78,30 @@ defmodule Cerbero.Snapshot do
   @spec stamp(map()) :: map()
   def stamp(map), do: Map.put(map, "checksum", compute_checksum(map))
 
+  @doc """
+  Stamp-and-write for callers holding a raw (or deliberately mutated) map:
+  always re-stamps, so the file's checksum matches its content. Callers
+  that already stamped — and possibly signed over that checksum — use
+  `write_stamped!/2` to skip the redundant re-encode.
+  """
   @spec write!(map(), Path.t()) :: :ok
   def write!(map, path), do: File.write!(path, Canonical.encode(stamp(map)))
+
+  @doc """
+  Encode an already-stamped (and possibly signed) map to disk verbatim —
+  no re-stamp. `stamp/1` is one full canonical encode (for the checksum);
+  `write!/2` on a stamped map would repeat it just to recompute the same
+  checksum. Refuses an unstamped map loudly rather than writing a file
+  `load/2` would reject as missing its checksum.
+  """
+  @spec write_stamped!(map(), Path.t()) :: :ok
+  def write_stamped!(%{"checksum" => "sha256:" <> _} = map, path) do
+    File.write!(path, Canonical.encode(map))
+  end
+
+  def write_stamped!(map, _path) when is_map(map) do
+    raise ArgumentError, "write_stamped!/2 requires a stamped map — use stamp/1 first, or write!/2"
+  end
 
   @spec load(Path.t(), keyword()) :: {:ok, %__MODULE__{}} | {:error, term()}
   def load(path, opts \\ []) do

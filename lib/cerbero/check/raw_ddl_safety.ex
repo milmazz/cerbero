@@ -252,6 +252,13 @@ defmodule Cerbero.Check.RawDDLSafety do
   # name at all. Resolve by scanning every known table's indexes for a name
   # match; unresolvable (no name captured, or no index in the catalog by
   # that name) falls back to an unowned-but-not-silent note.
+  #
+  # Deliberately NOT memoized: the fold hands each op a different catalog
+  # (Catalog.apply threads per-op — a raw CREATE INDEX earlier in the same
+  # migration adds an index this scan must see), so an index-name -> table
+  # memo built once would resolve against pre-op state. Raw DROP
+  # INDEX/REINDEX statements are rare enough per migration that the scan
+  # stays cheaper than rebuilding a memo per catalog version.
   defp resolve_target(_catalog, %{constraint: nil}), do: :unresolved
 
   defp resolve_target(catalog, %{constraint: index_name}) do

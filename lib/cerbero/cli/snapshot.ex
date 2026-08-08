@@ -138,8 +138,12 @@ defmodule Cerbero.CLI.Snapshot do
         0
 
       {:ok, raw} ->
-        raw = maybe_sign(raw, sign_seed)
-        Snapshot.write!(raw, out)
+        # Stamp exactly once, sign over that checksum, write verbatim.
+        # (Signing excludes the signature field from the checksum, so
+        # sign-after-stamp never invalidates it — see
+        # Snapshot.compute_checksum/1.) Snapshot.write!/2 would re-stamp,
+        # repeating the full canonical encode for an identical checksum.
+        raw |> Snapshot.stamp() |> maybe_sign(sign_seed) |> Snapshot.write_stamped!(out)
         IO.write(io, "cerbero: wrote #{out}\n")
         0
 
@@ -148,9 +152,9 @@ defmodule Cerbero.CLI.Snapshot do
     end
   end
 
-  defp maybe_sign(raw, nil), do: raw
+  defp maybe_sign(stamped, nil), do: stamped
 
-  defp maybe_sign(raw, seed), do: raw |> Snapshot.stamp() |> Signature.sign(seed)
+  defp maybe_sign(stamped, seed), do: Signature.sign(stamped, seed)
 
   defp error(io, reason) do
     IO.write(io, "cerbero: error: #{inspect(reason)}\n")

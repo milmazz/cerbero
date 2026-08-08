@@ -19,6 +19,7 @@ defmodule Cerbero.Catalog do
   defstruct engine: :postgres,
             version_num: 150_000,
             tables: %{},
+            partitions: %{},
             scale_mode: :exact,
             multiplier: 1.0,
             born: MapSet.new(),
@@ -33,10 +34,13 @@ defmodule Cerbero.Catalog do
 
   @spec from_snapshot(Snapshot.t(), Staleness.t()) :: t()
   def from_snapshot(%Snapshot{} = s, %Staleness{} = staleness) do
+    tables = Map.new(s.tables, fn t -> {"#{t.schema}.#{t.name}", t} end)
+
     %__MODULE__{
       engine: s.engine.name,
       version_num: s.engine.version_num,
-      tables: Map.new(s.tables, fn t -> {"#{t.schema}.#{t.name}", t} end),
+      tables: tables,
+      partitions: partitions_index(tables),
       scale_mode: staleness.scale_mode,
       multiplier: staleness.threshold_multiplier,
       source: :snapshot,
@@ -45,6 +49,18 @@ defmodule Cerbero.Catalog do
       standby: s.standby,
       stats_provenance: s.stats_provenance
     }
+  end
+
+  # parent qname -> [partition qname], built once at load: scale/2 on a
+  # partitioned parent previously re-scanned every table in the catalog on
+  # every call. Maintained through the overlay by the DropTable clause of
+  # apply/2; creates never need an update because overlay-born tables
+  # always carry partition_of nil (born_table/3) — partition_sum/2 guards
+  # against exactly that create-over-a-partition's-name case.
+  defp partitions_index(tables) do
+    tables
+    |> Enum.filter(fn {_qname, t} -> is_binary(t.partition_of) end)
+    |> Enum.group_by(fn {_qname, t} -> t.partition_of end, fn {qname, _t} -> qname end)
   end
 
   @spec empty(:postgres | :cockroachdb, integer()) :: t()
@@ -103,10 +119,16 @@ defmodule Cerbero.Catalog do
   end
 
   defp partition_sum(cat, parent) do
+    # Each indexed member is re-checked against the live tables map: a
+    # pending CreateTable over an existing partition's name replaces the
+    # table with an overlay-born one (partition_of nil) without touching
+    # the index, and such a table must not keep contributing the old
+    # partition's rows — the partition_of guard preserves the pre-index
+    # Enum.filter semantics exactly.
     partitions =
-      cat.tables
-      |> Map.values()
-      |> Enum.filter(&(&1.partition_of == parent))
+      for qname <- Map.get(cat.partitions, parent, []),
+          %Table{partition_of: ^parent} = t <- [Map.get(cat.tables, qname)],
+          do: t
 
     case partitions do
       [] ->
@@ -202,9 +224,28 @@ defmodule Cerbero.Catalog do
   def apply(cat, %Op.DropTable{table: name}) do
     qname = qualify(name)
 
+    # The dropped table leaves the partitions index on both sides: as a
+    # parent key (if it was partitioned) and as a member of its own
+    # parent's list (if it was a partition). Map.replace_lazy so an absent
+    # parent key is not conjured into an empty list — partition_sum/2
+    # treats a missing key and an all-members-dropped list the same
+    # (:unknown), but the index should not grow keys for tables that were
+    # never parents.
+    partitions =
+      case Map.get(cat.tables, qname) do
+        %Table{partition_of: parent} when is_binary(parent) ->
+          cat.partitions
+          |> Map.delete(qname)
+          |> Map.replace_lazy(parent, &List.delete(&1, qname))
+
+        _ ->
+          Map.delete(cat.partitions, qname)
+      end
+
     %{
       cat
       | tables: Map.delete(cat.tables, qname),
+        partitions: partitions,
         born: MapSet.delete(cat.born, qname),
         backfilled: MapSet.delete(cat.backfilled, qname)
     }

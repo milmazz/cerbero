@@ -32,13 +32,24 @@ defmodule Cerbero.Check.SnapshotHealth do
         ) ::
           [Finding.t()]
   def run_global(snapshot, staleness, all_migrations, pending, catalog, config) do
+    # One derive pass over the whole pending set, shared by
+    # absent_table_findings and stats_age_findings (each used to derive it
+    # independently). Effects.derive/3 depends only on the op and the
+    # engine/version pair, and Catalog.apply/2 never changes engine or
+    # version_num — so deriving against the base catalog here is identical
+    # to deriving inside absent_table_findings' migration-local fold.
+    derived =
+      for m <- pending do
+        {m, Enum.flat_map(m.operations, &Effects.derive(&1, catalog.engine, catalog.version_num))}
+      end
+
     age_findings(staleness, config) ++
       invalid_index_findings(snapshot) ++
       divergence_findings(snapshot, all_migrations) ++
       aged_pending_findings(snapshot, pending, config) ++
       standby_findings(snapshot) ++
-      absent_table_findings(pending, catalog) ++
-      stats_age_findings(snapshot, pending, catalog, config)
+      absent_table_findings(derived, catalog) ++
+      stats_age_findings(snapshot, derived, catalog, config)
   end
 
   defp finding(severity, message, opts \\ []) do
@@ -161,10 +172,10 @@ defmodule Cerbero.Check.SnapshotHealth do
   # actually targets — those are the judgments the stale stats degrade.
   # Standby snapshots are excluded: their timestamps are NULL by
   # mechanism and standby_findings/1 already covers that.
-  defp stats_age_findings(%Snapshot{standby: true}, _pending, _catalog, _config), do: []
+  defp stats_age_findings(%Snapshot{standby: true}, _derived, _catalog, _config), do: []
 
-  defp stats_age_findings(%Snapshot{} = snapshot, pending, catalog, config) do
-    targeted = targeted_tables(pending, catalog)
+  defp stats_age_findings(%Snapshot{} = snapshot, derived, catalog, config) do
+    targeted = targeted_tables(derived)
 
     for t <- snapshot.tables,
         qualified = "#{t.schema}.#{t.name}",
@@ -189,10 +200,9 @@ defmodule Cerbero.Check.SnapshotHealth do
     end
   end
 
-  defp targeted_tables(pending, catalog) do
-    for m <- pending,
-        op <- m.operations,
-        effect <- Effects.derive(op, catalog.engine, catalog.version_num),
+  defp targeted_tables(derived) do
+    for {_m, effects} <- derived,
+        effect <- effects,
         {_role, table} <- effect.relations,
         is_binary(table),
         into: MapSet.new() do
@@ -222,12 +232,13 @@ defmodule Cerbero.Check.SnapshotHealth do
   end
 
   # Absent-and-not-created-by-pending => unknown scale + a demand for re-export.
-  defp absent_table_findings(pending, catalog) do
+  # The catalog fold is still per-migration (migration N must see tables
+  # created by 1..N-1); only the effects are pre-derived, see run_global/6.
+  defp absent_table_findings(derived, catalog) do
     {findings, _cat} =
-      Enum.flat_map_reduce(pending, catalog, fn m, cat ->
+      Enum.flat_map_reduce(derived, catalog, fn {m, effects}, cat ->
         findings =
-          m.operations
-          |> Enum.flat_map(&Effects.derive(&1, cat.engine, cat.version_num))
+          effects
           |> Enum.reject(&(&1.class == :create_table))
           |> Enum.flat_map(fn effect ->
             for {_role, table} <- effect.relations,
