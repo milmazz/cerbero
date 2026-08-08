@@ -4,8 +4,8 @@ defmodule Cerbero.Snapshot do
 
   The checksum detects corruption and hand-edits — anyone who can commit
   can regenerate it; it is not tamper-proofing. Tamper-proofing is the
-  optional Ed25519 signature (`Cerbero.Snapshot.Signature`, format v3):
-  when `.cerbero.exs` pins `snapshot_verify_keys`, a snapshot must carry
+  optional Ed25519 signature (`Cerbero.Snapshot.Signature`): when
+  `.cerbero.exs` pins `snapshot_verify_keys`, a snapshot must carry
   a valid signature from one of those keys to load.
   """
 
@@ -54,12 +54,13 @@ defmodule Cerbero.Snapshot do
     @type t :: %__MODULE__{}
   end
 
-  # v2 adds the optional top-level "precision" field ("exact" |
-  # "order_of_magnitude") — required to interpret count/byte fields honestly
-  # when the order-of-magnitude export mode is used. v3 adds the optional
-  # top-level "signature" field (Ed25519 over the checksum — see
-  # Cerbero.Snapshot.Signature). v1/v2 snapshots remain fully supported.
-  @format_version 3
+  # v1 is the whole 0.1.0 baseline, including the optional top-level
+  # "precision" field ("exact" | "order_of_magnitude" — required to interpret
+  # count/byte fields honestly in order-of-magnitude export mode) and the
+  # optional top-level "signature" field (Ed25519 over the checksum — see
+  # Cerbero.Snapshot.Signature). The version only moves on a
+  # backwards-incompatible change after release.
+  @format_version 1
   @min_supported 1
 
   def format_version, do: @format_version

@@ -112,6 +112,12 @@ defmodule Cerbero.SnapshotTest do
   end
 
   describe "format version gate" do
+    # Pre-release collapse: precision and signature are part of the v1
+    # baseline — there are no published readers of older formats to protect.
+    test "the current format version is 1" do
+      assert Cerbero.Snapshot.format_version() == 1
+    end
+
     defp reload_with(tmp_dir, fun) do
       raw = "test/fixtures/snapshots/huge_table.json" |> File.read!() |> JSON.decode!()
       path = Path.join(tmp_dir, "versioned.json")
@@ -142,24 +148,20 @@ defmodule Cerbero.SnapshotTest do
     end
   end
 
-  describe "v2 precision field" do
+  describe "precision field" do
     test "decodes precision as a closed enum, defaulting to :exact when absent" do
-      raw = Cerbero.Test.SnapshotBuilder.build(%{"format_version" => 2})
+      raw = Cerbero.Test.SnapshotBuilder.build(%{})
       assert {:ok, %Cerbero.Snapshot{precision: :exact}} = Cerbero.Snapshot.decode(raw)
 
       bucketed =
-        Cerbero.Test.SnapshotBuilder.build(%{
-          "format_version" => 2,
-          "precision" => "order_of_magnitude"
-        })
+        Cerbero.Test.SnapshotBuilder.build(%{"precision" => "order_of_magnitude"})
 
       assert {:ok, %Cerbero.Snapshot{precision: :order_of_magnitude}} =
                Cerbero.Snapshot.decode(bucketed)
     end
 
     test "rejects out-of-enum precision values" do
-      raw =
-        Cerbero.Test.SnapshotBuilder.build(%{"format_version" => 2, "precision" => "fuzzy"})
+      raw = Cerbero.Test.SnapshotBuilder.build(%{"precision" => "fuzzy"})
 
       assert {:error, {:invalid_value, "$.precision", "fuzzy"}} = Cerbero.Snapshot.decode(raw)
     end

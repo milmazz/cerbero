@@ -75,20 +75,21 @@ It does not certify migrations as safe; it judges the statement, not the moment.
   `mix cerbero.snapshot --precision`): buckets every exported count and byte
   to its power-of-ten floor so committed snapshots do not reveal exact
   business metrics; the default row tiers are powers of ten, so verdicts
-  survive. Introduces snapshot format v2 (adds the `precision` field; v1
-  snapshots remain fully readable) and the check summary line notes the
-  reduced precision.
+  survive. Adds the optional `precision` field to the snapshot (part of the
+  format v1 baseline; absent means exact) and the check summary line notes
+  the reduced precision.
 - `--format sarif` on `mix cerbero.check` — SARIF 2.1.0 output for GitHub
   code-scanning annotations. Findings map `error`/`warning`/`note` from their
   severities; global snapshot-health findings anchor to the committed snapshot
   file so they still surface in PR review.
-- Cryptographic snapshot signing (format v3): `mix cerbero.snapshot
+- Cryptographic snapshot signing: `mix cerbero.snapshot
   --gen-signing-key` mints an Ed25519 keypair, `--sign-key` signs the export
   (signature over the checksum, which covers the canonical content), and
   `snapshot_verify_keys` in `.cerbero.exs` pins the trusted public keys —
   once set, an unsigned, tampered-and-restamped, or foreign-key-signed
   snapshot refuses to load. Unsigned snapshots without pinned keys behave
-  exactly as before; v1/v2 snapshots remain fully readable.
+  exactly as before. The optional `signature` field is part of the snapshot
+  format v1 baseline.
 - `mix cerbero.check --down` judges rollback bodies: `def down` operations and
   the down leg of two-arg `execute` are parsed into their own operation list
   and judged against the catalog as the pending ups leave it (the state a

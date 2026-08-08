@@ -1,6 +1,6 @@
 defmodule Cerbero.Snapshot.Signature do
   @moduledoc """
-  Optional Ed25519 tamper-proofing for snapshots (format v3).
+  Optional Ed25519 tamper-proofing for snapshots.
 
   The checksum detects corruption and hand-edits, but anyone who can
   commit can regenerate it. A signature binds the checksum to a private

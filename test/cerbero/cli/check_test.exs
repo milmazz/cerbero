@@ -212,7 +212,6 @@ defmodule Cerbero.CLI.CheckTest do
   test "an order-of-magnitude snapshot annotates the summary line", %{tmp_dir: tmp_dir} do
     raw =
       Cerbero.Test.SnapshotBuilder.build(%{
-        "format_version" => 2,
         "precision" => "order_of_magnitude",
         "collected_at" => "2026-07-01T00:00:00Z"
       })
