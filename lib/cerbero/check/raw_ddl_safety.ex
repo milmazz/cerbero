@@ -153,7 +153,8 @@ defmodule Cerbero.Check.RawDDLSafety do
             migration,
             effect.line,
             relations: [qualified],
-            engine: catalog.engine
+            engine: catalog.engine,
+            metadata: %{lock: :access_exclusive}
           )
         ]
     end
@@ -188,7 +189,8 @@ defmodule Cerbero.Check.RawDDLSafety do
               migration,
               effect.line,
               relations: [qualified],
-              engine: catalog.engine
+              engine: catalog.engine,
+              metadata: %{lock: effect.lock}
             )
           ]
         end

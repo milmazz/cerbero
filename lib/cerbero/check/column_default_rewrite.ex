@@ -67,7 +67,8 @@ defmodule Cerbero.Check.ColumnDefaultRewrite do
           migration,
           effect.line,
           relations: [Catalog.qualify(table)],
-          engine: :postgres
+          engine: :postgres,
+          metadata: %{lock: :access_exclusive}
         )
       ]
     end
@@ -98,7 +99,8 @@ defmodule Cerbero.Check.ColumnDefaultRewrite do
             migration,
             effect.line,
             relations: [Catalog.qualify(table)],
-            engine: :cockroachdb
+            engine: :cockroachdb,
+            metadata: %{lock: :online_schema_change}
           )
         ]
     end

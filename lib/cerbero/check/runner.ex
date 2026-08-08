@@ -106,12 +106,18 @@ defmodule Cerbero.Check.Runner do
 
   # `lock_timeout_attested: true` is the team affirming their migration
   # sessions already set one (design §4). This only ANNOTATES findings
-  # that talk about a lock a `lock_timeout` would bound — it never changes
-  # severity or silences anything; wired centrally here so every rule gets
-  # it for free instead of each one re-implementing the same string check.
-  defp apply_lock_timeout_attestation(%Finding{message: message} = finding, %Config{lock_timeout_attested: true}) do
-    if message =~ "lock_timeout" or message =~ "ACCESS EXCLUSIVE" do
-      %{finding | message: message <> " (lock_timeout attested in .cerbero.exs)"}
+  # about a lock a `lock_timeout` would bound — it never changes severity
+  # or silences anything; wired centrally here so every rule gets it for
+  # free. Rules declare the lock they judged as `metadata: %{lock: ...}`
+  # (structured, not message text — string matching missed SHARE ROW
+  # EXCLUSIVE and broke on any wording edit); the write-blocking set below
+  # mirrors Cerbero.Severity's private list, same trade-off as the copy in
+  # Cerbero.Check.RawDDLSafety.
+  @boundable_locks [:access_exclusive, :share, :share_row_exclusive]
+
+  defp apply_lock_timeout_attestation(%Finding{} = finding, %Config{lock_timeout_attested: true}) do
+    if finding.metadata[:lock] in @boundable_locks do
+      %{finding | message: finding.message <> " (lock_timeout attested in .cerbero.exs)"}
     else
       finding
     end

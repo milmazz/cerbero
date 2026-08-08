@@ -83,7 +83,8 @@ defmodule Cerbero.Check.UnsafeIndexCreation do
           migration,
           effect.line,
           relations: [qualified],
-          engine: catalog.engine
+          engine: catalog.engine,
+          metadata: %{lock: effect.lock}
         )
       ]
     else
@@ -113,7 +114,8 @@ defmodule Cerbero.Check.UnsafeIndexCreation do
           migration,
           effect.line,
           relations: [Catalog.qualify(table)],
-          engine: :cockroachdb
+          engine: :cockroachdb,
+          metadata: %{lock: :online_schema_change}
         )
       ]
     else

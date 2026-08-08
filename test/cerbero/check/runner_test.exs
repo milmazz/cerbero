@@ -24,6 +24,7 @@ defmodule Cerbero.Check.RunnerTest do
   import Cerbero.Test.SnapshotBuilder
 
   alias Cerbero.Catalog
+  alias Cerbero.Check.FKValidationScan
   alias Cerbero.Check.Helpers
   alias Cerbero.Check.NotNullOnPopulatedTable
   alias Cerbero.Check.Runner
@@ -148,7 +149,29 @@ defmodule Cerbero.Check.RunnerTest do
     assert msg_on == msg_off <> " (lock_timeout attested in .cerbero.exs)"
   end
 
-  test "lock_timeout_attested leaves findings that don't mention a lock untouched", %{
+  test "lock_timeout_attested annotates SHARE ROW EXCLUSIVE findings (fk_validation_scan) via lock metadata",
+       %{config: config} do
+    m =
+      parse!(
+        "20260801000000",
+        "alter table(:events) do\n add :owner_org_id, references(:orgs)\n end"
+      )
+
+    tables = [
+      table("events", %{"n_live_tup" => 412_000_000, "reltuples" => 412_000_000.0}),
+      table("orgs", %{"n_live_tup" => 41_000_000, "reltuples" => 41_000_000.0})
+    ]
+
+    config_on = %{config | lock_timeout_attested: true}
+
+    {findings, _} = Runner.run([m], catalog(tables), config_on, [FKValidationScan])
+
+    assert [%Finding{check: :fk_validation_scan, severity: :error, message: msg}] = findings
+    assert msg =~ "SHARE ROW EXCLUSIVE"
+    assert String.ends_with?(msg, " (lock_timeout attested in .cerbero.exs)")
+  end
+
+  test "lock_timeout_attested leaves findings without lock metadata untouched", %{
     config: config
   } do
     config_on = %{config | lock_timeout_attested: true}

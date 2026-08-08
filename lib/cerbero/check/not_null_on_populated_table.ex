@@ -54,7 +54,8 @@ defmodule Cerbero.Check.NotNullOnPopulatedTable do
               "so the scan is skipped (PG >= 12); still takes ACCESS EXCLUSIVE briefly — set a lock_timeout",
             migration,
             line,
-            relations: [qualified]
+            relations: [qualified],
+            metadata: %{lock: :access_exclusive}
           )
         ]
 
@@ -88,7 +89,8 @@ defmodule Cerbero.Check.NotNullOnPopulatedTable do
                 "in a later migration; on PG >= 12 the final SET NOT NULL then skips the scan",
               migration,
               line,
-              relations: [qualified]
+              relations: [qualified],
+              metadata: %{lock: :access_exclusive}
             )
           ]
         end
@@ -117,7 +119,8 @@ defmodule Cerbero.Check.NotNullOnPopulatedTable do
             migration,
             line,
             relations: [qualified],
-            engine: :cockroachdb
+            engine: :cockroachdb,
+            metadata: %{lock: :online_schema_change}
           )
         ]
     end
