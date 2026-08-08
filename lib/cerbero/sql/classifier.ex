@@ -183,13 +183,40 @@ defmodule Cerbero.SQL.Classifier do
     end
   end
 
+  # Patterns as module attributes: the @ident interpolation resolves at
+  # compile time, so each regex is compiled once at module load. As sigils
+  # inside do_classify/1 they were recompiled on every call — up to the
+  # whole ladder per statement on the way to :unknown.
+  @re_create_index ~r/^create (unique )?index (concurrently )?(?:if not exists )?(?:\S+ )?on (?:only )?#{@ident}/
+  @re_drop_index ~r/^drop index (concurrently )?(?:if exists )?#{@ident}/
+  @re_create_table ~r/^create table (?:if not exists )?#{@ident}/
+  @re_drop_table ~r/^drop table (?:if exists )?#{@ident}/
+  @re_add_check_is_not_null ~r/^alter table (?:only )?(?:if exists )?#{@ident} add constraint (\S+) check \( ?(\S+) is not null ?\)( not valid)?/
+  @re_add_check ~r/^alter table (?:only )?(?:if exists )?#{@ident} add constraint (\S+) check /
+  @re_add_fk_references ~r/^alter table (?:only )?(?:if exists )?#{@ident} add (?:constraint (\S+) )?foreign key (?:\([^)]*\) )?references #{@ident}(?:\([^)]*\))?/
+  @re_add_fk ~r/^alter table (?:only )?(?:if exists )?#{@ident} add (?:constraint (\S+) )?foreign key/
+  @re_validate_constraint ~r/^alter table (?:only )?(?:if exists )?#{@ident} validate constraint (\S+)/
+  @re_set_not_null ~r/^alter table (?:only )?(?:if exists )?#{@ident} alter column (\S+) set not null/
+  @re_alter_column_type ~r/^alter table (?:only )?(?:if exists )?#{@ident} alter column (\S+) (?:set data )?type /
+  @re_set_default ~r/^alter table (?:only )?(?:if exists )?#{@ident} alter column (\S+) set default /
+  @re_drop_default ~r/^alter table (?:only )?(?:if exists )?#{@ident} alter column (\S+) drop default/
+  @re_rename ~r/^alter table (?:only )?(?:if exists )?#{@ident} rename /
+  @re_attach_partition ~r/^alter table (?:only )?(?:if exists )?#{@ident} attach partition #{@ident}/
+  @re_detach_partition ~r/^alter table (?:only )?(?:if exists )?#{@ident} detach partition #{@ident}( concurrently)?/
+  @re_set_logged ~r/^alter table (?:only )?(?:if exists )?#{@ident} set (logged|unlogged)(?: |$)/
+  @re_add_primary_key ~r/^alter table (?:only )?(?:if exists )?#{@ident} add (?:constraint (\S+) )?primary key/
+  @re_add_unique ~r/^alter table (?:only )?(?:if exists )?#{@ident} add (?:constraint (\S+) )?unique/
+  @re_add_column ~r/^alter table (?:only )?(?:if exists )?#{@ident} add (?:column )?(?:if not exists )?(\S+) /
+  @re_drop_column ~r/^alter table (?:only )?(?:if exists )?#{@ident} drop (?:column )?(?:if exists )?(\S+)/
+  @re_truncate ~r/^truncate (?:table )?(?:only )?#{@ident}/
+  @re_reindex ~r/^reindex /
+  @re_update ~r/^update (?:only )?#{@ident} set /
+  @re_delete ~r/^delete from (?:only )?#{@ident}/
+  @re_insert_select ~r/^insert into #{@ident}[\s\S]* select /
+
   defp do_classify(n) do
     cond do
-      m =
-          run(
-            ~r/^create (unique )?index (concurrently )?(?:if not exists )?(?:\S+ )?on (?:only )?#{@ident}/,
-            n
-          ) ->
+      m = run(@re_create_index, n) ->
         %Classified{
           class: :create_index,
           unique: m[1] != "",
@@ -197,20 +224,16 @@ defmodule Cerbero.SQL.Classifier do
           table: unq(m[3])
         }
 
-      m = run(~r/^drop index (concurrently )?(?:if exists )?#{@ident}/, n) ->
+      m = run(@re_drop_index, n) ->
         %Classified{class: :drop_index, concurrently: m[1] != "", constraint: unq(m[2])}
 
-      m = run(~r/^create table (?:if not exists )?#{@ident}/, n) ->
+      m = run(@re_create_table, n) ->
         %Classified{class: :create_table, table: unq(m[1])}
 
-      m = run(~r/^drop table (?:if exists )?#{@ident}/, n) ->
+      m = run(@re_drop_table, n) ->
         %Classified{class: :drop_table, table: unq(m[1])}
 
-      m =
-          run(
-            ~r/^alter table (?:only )?(?:if exists )?#{@ident} add constraint (\S+) check \( ?(\S+) is not null ?\)( not valid)?/,
-            n
-          ) ->
+      m = run(@re_add_check_is_not_null, n) ->
         %Classified{
           class: :add_check_is_not_null,
           table: unq(m[1]),
@@ -219,7 +242,7 @@ defmodule Cerbero.SQL.Classifier do
           not_valid: m[4] != ""
         }
 
-      m = run(~r/^alter table (?:only )?(?:if exists )?#{@ident} add constraint (\S+) check /, n) ->
+      m = run(@re_add_check, n) ->
         %Classified{
           class: :add_check,
           table: unq(m[1]),
@@ -227,11 +250,7 @@ defmodule Cerbero.SQL.Classifier do
           not_valid: String.ends_with?(n, "not valid")
         }
 
-      m =
-          run(
-            ~r/^alter table (?:only )?(?:if exists )?#{@ident} add (?:constraint (\S+) )?foreign key (?:\([^)]*\) )?references #{@ident}(?:\([^)]*\))?/,
-            n
-          ) ->
+      m = run(@re_add_fk_references, n) ->
         %Classified{
           class: :add_foreign_key,
           table: unq(m[1]),
@@ -240,11 +259,7 @@ defmodule Cerbero.SQL.Classifier do
           not_valid: String.ends_with?(n, "not valid")
         }
 
-      m =
-          run(
-            ~r/^alter table (?:only )?(?:if exists )?#{@ident} add (?:constraint (\S+) )?foreign key/,
-            n
-          ) ->
+      m = run(@re_add_fk, n) ->
         %Classified{
           class: :add_foreign_key,
           table: unq(m[1]),
@@ -252,48 +267,28 @@ defmodule Cerbero.SQL.Classifier do
           not_valid: String.ends_with?(n, "not valid")
         }
 
-      m = run(~r/^alter table (?:only )?(?:if exists )?#{@ident} validate constraint (\S+)/, n) ->
+      m = run(@re_validate_constraint, n) ->
         %Classified{class: :validate_constraint, table: unq(m[1]), constraint: unq(m[2])}
 
-      m =
-          run(
-            ~r/^alter table (?:only )?(?:if exists )?#{@ident} alter column (\S+) set not null/,
-            n
-          ) ->
+      m = run(@re_set_not_null, n) ->
         %Classified{class: :set_not_null, table: unq(m[1]), column: unq(m[2])}
 
-      m =
-          run(
-            ~r/^alter table (?:only )?(?:if exists )?#{@ident} alter column (\S+) (?:set data )?type /,
-            n
-          ) ->
+      m = run(@re_alter_column_type, n) ->
         %Classified{class: :alter_column_type, table: unq(m[1]), column: unq(m[2])}
 
-      m =
-          run(
-            ~r/^alter table (?:only )?(?:if exists )?#{@ident} alter column (\S+) set default /,
-            n
-          ) ->
+      m = run(@re_set_default, n) ->
         %Classified{class: :set_default, table: unq(m[1]), column: unq(m[2])}
 
-      m =
-          run(
-            ~r/^alter table (?:only )?(?:if exists )?#{@ident} alter column (\S+) drop default/,
-            n
-          ) ->
+      m = run(@re_drop_default, n) ->
         %Classified{class: :drop_default, table: unq(m[1]), column: unq(m[2])}
 
-      m = run(~r/^alter table (?:only )?(?:if exists )?#{@ident} rename /, n) ->
+      m = run(@re_rename, n) ->
         %Classified{class: :rename, table: unq(m[1])}
 
-      m = run(~r/^alter table (?:only )?(?:if exists )?#{@ident} attach partition #{@ident}/, n) ->
+      m = run(@re_attach_partition, n) ->
         %Classified{class: :attach_partition, table: unq(m[1]), ref_table: unq(m[2])}
 
-      m =
-          run(
-            ~r/^alter table (?:only )?(?:if exists )?#{@ident} detach partition #{@ident}( concurrently)?/,
-            n
-          ) ->
+      m = run(@re_detach_partition, n) ->
         %Classified{
           class: :detach_partition,
           table: unq(m[1]),
@@ -303,31 +298,19 @@ defmodule Cerbero.SQL.Classifier do
           concurrently: (m[3] || "") != ""
         }
 
-      m = run(~r/^alter table (?:only )?(?:if exists )?#{@ident} set (logged|unlogged)(?: |$)/, n) ->
+      m = run(@re_set_logged, n) ->
         %Classified{
           class: if(m[2] == "logged", do: :set_logged, else: :set_unlogged),
           table: unq(m[1])
         }
 
-      m =
-          run(
-            ~r/^alter table (?:only )?(?:if exists )?#{@ident} add (?:constraint (\S+) )?primary key/,
-            n
-          ) ->
+      m = run(@re_add_primary_key, n) ->
         %Classified{class: :add_primary_key, table: unq(m[1]), constraint: unq(m[2])}
 
-      m =
-          run(
-            ~r/^alter table (?:only )?(?:if exists )?#{@ident} add (?:constraint (\S+) )?unique/,
-            n
-          ) ->
+      m = run(@re_add_unique, n) ->
         %Classified{class: :add_unique, table: unq(m[1]), constraint: unq(m[2])}
 
-      m =
-          run(
-            ~r/^alter table (?:only )?(?:if exists )?#{@ident} add (?:column )?(?:if not exists )?(\S+) /,
-            n
-          ) ->
+      m = run(@re_add_column, n) ->
         %Classified{
           class: :add_column,
           table: unq(m[1]),
@@ -335,26 +318,22 @@ defmodule Cerbero.SQL.Classifier do
           volatile_default: volatile_default?(n)
         }
 
-      m =
-          run(
-            ~r/^alter table (?:only )?(?:if exists )?#{@ident} drop (?:column )?(?:if exists )?(\S+)/,
-            n
-          ) ->
+      m = run(@re_drop_column, n) ->
         %Classified{class: :drop_column, table: unq(m[1]), column: unq(m[2])}
 
-      m = run(~r/^truncate (?:table )?(?:only )?#{@ident}/, n) ->
+      m = run(@re_truncate, n) ->
         %Classified{class: :truncate, table: unq(m[1])}
 
-      run(~r/^reindex /, n) ->
+      run(@re_reindex, n) ->
         %Classified{class: :reindex, concurrently: String.contains?(n, " concurrently")}
 
-      m = run(~r/^update (?:only )?#{@ident} set /, n) ->
+      m = run(@re_update, n) ->
         %Classified{class: :update, table: unq(m[1])}
 
-      m = run(~r/^delete from (?:only )?#{@ident}/, n) ->
+      m = run(@re_delete, n) ->
         %Classified{class: :delete, table: unq(m[1])}
 
-      m = run(~r/^insert into #{@ident}[\s\S]* select /, n) ->
+      m = run(@re_insert_select, n) ->
         %Classified{class: :insert_select, table: unq(m[1])}
 
       true ->

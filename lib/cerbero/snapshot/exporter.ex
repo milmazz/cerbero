@@ -89,20 +89,33 @@ defmodule Cerbero.Snapshot.Exporter do
       conn |> q!(Queries.stats_reset()) |> rows() |> List.first([nil]) |> List.first()
 
     {:ok,
-     %{
-       "applied_migrations" => applied,
-       "cerbero_version" => @cerbero_version,
-       "checksum" => nil,
-       "collected_at" => clock.() |> DateTime.truncate(:second) |> DateTime.to_iso8601(),
-       "database" => database,
-       "engine" => engine,
-       "format_version" => Cerbero.Snapshot.format_version(),
-       "standby" => standby,
-       "stats_provenance" => if(standby, do: "standby", else: "primary"),
-       "stats_reset" => stats_reset && DateTime.to_iso8601(stats_reset),
-       "tables" =>
-         assemble_tables(tables, columns, indexes, constraints, crdb_row_counts, crdb_stats_times)
-     }}
+     raw_snapshot(
+       engine,
+       database,
+       standby,
+       stats_reset,
+       applied,
+       assemble_tables(tables, columns, indexes, constraints, crdb_row_counts, crdb_stats_times),
+       clock
+     )}
+  end
+
+  # The one raw-map shape both export paths (live connection and DBA file)
+  # produce — a new top-level field is added here, once.
+  defp raw_snapshot(engine, database, standby, stats_reset, applied, tables, clock) do
+    %{
+      "applied_migrations" => applied,
+      "cerbero_version" => @cerbero_version,
+      "checksum" => nil,
+      "collected_at" => clock.() |> DateTime.truncate(:second) |> DateTime.to_iso8601(),
+      "database" => database,
+      "engine" => engine,
+      "format_version" => Cerbero.Snapshot.format_version(),
+      "standby" => standby,
+      "stats_provenance" => if(standby, do: "standby", else: "primary"),
+      "stats_reset" => stats_reset && DateTime.to_iso8601(stats_reset),
+      "tables" => tables
+    }
   end
 
   # CRDB leaves pg_class.reltuples/relpages NULL and its pg_stat_user_tables
@@ -136,13 +149,13 @@ defmodule Cerbero.Snapshot.Exporter do
     conn
     |> q!(Queries.crdb_row_counts())
     |> rows()
-    |> Map.new(fn
-      [name, 0] -> {name, nil}
-      [name, count] -> {name, count}
-    end)
+    |> Map.new(fn [name, count] -> {name, zero_row_count_to_nil(count)} end)
   end
 
   defp crdb_row_counts(_conn, _postgres), do: %{}
+
+  defp zero_row_count_to_nil(0), do: nil
+  defp zero_row_count_to_nil(count), do: count
 
   # CRDB analyze-timestamp equivalent (roadmap item 10): statistics
   # creation times keyed by {schema, name} — manual CREATE STATISTICS maps
@@ -411,13 +424,17 @@ defmodule Cerbero.Snapshot.Exporter do
           {current, acc}
 
         json when current != nil ->
-          {current, Map.update!(acc, current, &(&1 ++ [JSON.decode!(json)]))}
+          {current, Map.update!(acc, current, &[JSON.decode!(json) | &1])}
 
         _ ->
           {current, acc}
       end
     end)
     |> elem(1)
+    # Rows are accumulated prepended (tail-appending is quadratic on the
+    # tens-of-thousands-of-lines columns section); one reverse restores
+    # file order.
+    |> Map.new(fn {name, section_rows} -> {name, Enum.reverse(section_rows)} end)
   end
 
   # Maps each section's JSON rows through the same assemble path as the
@@ -460,10 +477,7 @@ defmodule Cerbero.Snapshot.Exporter do
       |> Map.new(fn m ->
         # Same 0-means-no-signal mapping as the live path (see
         # crdb_row_counts/2): never forward a fabricated zero.
-        case m["estimated_row_count"] do
-          0 -> {m["table_name"], nil}
-          count -> {m["table_name"], count}
-        end
+        {m["table_name"], zero_row_count_to_nil(m["estimated_row_count"])}
       end)
 
     crdb_stats_times =
@@ -484,20 +498,15 @@ defmodule Cerbero.Snapshot.Exporter do
       |> Enum.sort()
 
     {:ok,
-     %{
-       "applied_migrations" => applied,
-       "cerbero_version" => @cerbero_version,
-       "checksum" => nil,
-       "collected_at" => clock.() |> DateTime.truncate(:second) |> DateTime.to_iso8601(),
-       "database" => database,
-       "engine" => engine,
-       "format_version" => Cerbero.Snapshot.format_version(),
-       "standby" => standby,
-       "stats_provenance" => if(standby, do: "standby", else: "primary"),
-       "stats_reset" => stats_reset && DateTime.to_iso8601(stats_reset),
-       "tables" =>
-         assemble_tables(tables, columns, indexes, constraints, crdb_row_counts, crdb_stats_times)
-     }}
+     raw_snapshot(
+       engine,
+       database,
+       standby,
+       stats_reset,
+       applied,
+       assemble_tables(tables, columns, indexes, constraints, crdb_row_counts, crdb_stats_times),
+       clock
+     )}
   end
 
   # A one-row, one-column section (e.g. `SELECT version()`): read the

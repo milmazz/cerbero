@@ -2,7 +2,7 @@ defmodule Cerbero.Check.FKValidationScan do
   @moduledoc "Rule 5: ADD FK scans the referencing table while blocking writes on BOTH tables."
   @behaviour Cerbero.Check
 
-  alias Cerbero.{Catalog, Severity}
+  alias Cerbero.{Catalog, Finding, Severity}
   alias Cerbero.Check.Helpers
   alias Cerbero.DDL.Effects
 
@@ -15,29 +15,22 @@ defmodule Cerbero.Check.FKValidationScan do
     if catalog.engine == :cockroachdb do
       []
     else
-      {findings, _} =
-        Enum.reduce(migration.operations, {[], catalog}, fn op, {findings, current_catalog} ->
-          new_findings =
-            op
-            |> Effects.derive(current_catalog.engine, current_catalog.version_num)
-            |> Enum.filter(&(&1.class == :add_foreign_key))
-            |> Enum.flat_map(fn effect ->
-              # Skip FKs with validate: false (add_foreign_key_not_valid) — they don't trigger a scan
-              referencing = Keyword.get(effect.relations, :target)
-              referenced = Keyword.get(effect.relations, :referenced)
-              judge(referencing, referenced, effect.line, migration, current_catalog, config)
-            end)
-
-          updated_catalog = Catalog.apply(current_catalog, op)
-          {findings ++ new_findings, updated_catalog}
+      Helpers.fold_operations(migration, catalog, fn op, cat ->
+        op
+        |> Effects.derive(cat.engine, cat.version_num)
+        |> Enum.filter(&(&1.class == :add_foreign_key))
+        |> Enum.flat_map(fn effect ->
+          # Skip FKs with validate: false (add_foreign_key_not_valid) — they don't trigger a scan
+          referencing = Keyword.get(effect.relations, :target)
+          referenced = Keyword.get(effect.relations, :referenced)
+          judge(referencing, referenced, effect.line, migration, cat, config)
         end)
-
-      findings
+      end)
     end
   end
 
   defp judge(referencing, referenced, line, migration, catalog, config) do
-    if Catalog.born?(catalog, referencing) and not Catalog.backfilled?(catalog, referencing) do
+    if Catalog.born_empty?(catalog, referencing) do
       []
     else
       judge_scan(referencing, referenced, line, migration, catalog, config)
@@ -64,7 +57,7 @@ defmodule Cerbero.Check.FKValidationScan do
           catalog.multiplier
         )
       )
-      |> Enum.max_by(fn s -> %{error: 3, warning: 2, info: 1, none: 0}[s] end)
+      |> Finding.most_severe()
 
     if severity in [:error, :warning] do
       q_ing = Catalog.qualify(referencing)

@@ -22,7 +22,6 @@ defmodule Cerbero.Snapshot do
     :stats_reset,
     :applied_migrations,
     :tables,
-    :raw,
     precision: :exact
   ]
 
@@ -201,7 +200,6 @@ defmodule Cerbero.Snapshot do
          stats_reset: stats_reset,
          applied_migrations: raw["applied_migrations"],
          tables: tables,
-         raw: raw,
          precision: precision
        }}
     end

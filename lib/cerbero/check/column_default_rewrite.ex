@@ -11,23 +11,12 @@ defmodule Cerbero.Check.ColumnDefaultRewrite do
 
   @impl true
   def run(migration, catalog, config) do
-    {findings, _} =
-      Enum.reduce(migration.operations, {[], catalog}, fn op, {findings, current_catalog} ->
-        new_findings =
-          op
-          |> Effects.derive(current_catalog.engine, current_catalog.version_num)
-          |> Enum.filter(
-            &(&1.class in [:add_column_volatile_default, :add_column_generated_stored])
-          )
-          |> Enum.flat_map(fn effect ->
-            judge(effect, migration, current_catalog, config)
-          end)
-
-        updated_catalog = Catalog.apply(current_catalog, op)
-        {findings ++ new_findings, updated_catalog}
-      end)
-
-    findings
+    Helpers.fold_operations(migration, catalog, fn op, cat ->
+      op
+      |> Effects.derive(cat.engine, cat.version_num)
+      |> Enum.filter(&(&1.class in [:add_column_volatile_default, :add_column_generated_stored]))
+      |> Enum.flat_map(fn effect -> judge(effect, migration, cat, config) end)
+    end)
   end
 
   defp judge(effect, migration, catalog, config) do
@@ -37,7 +26,7 @@ defmodule Cerbero.Check.ColumnDefaultRewrite do
       table == nil ->
         []
 
-      Catalog.born?(catalog, table) and not Catalog.backfilled?(catalog, table) ->
+      Catalog.born_empty?(catalog, table) ->
         []
 
       catalog.engine == :cockroachdb ->
@@ -93,31 +82,17 @@ defmodule Cerbero.Check.ColumnDefaultRewrite do
           "a GENERATED ... STORED column (rewrites on every version)"
       end
 
-    with {:rows, rows, _} <- Catalog.scale(catalog, table),
-         true <- rows >= config.rows_warning * catalog.multiplier do
-      severity = if rows >= config.rows_error * catalog.multiplier, do: :warning, else: :info
+    case Helpers.crdb_cost_severity(catalog, table, config) do
+      nil ->
+        []
 
-      [
-        Helpers.finding(
-          __MODULE__,
-          severity,
-          "adding a column with #{what} on #{Catalog.qualify(table)} " <>
-            "(#{Helpers.describe_scale(catalog, table)}) triggers an online backfill that consumes " <>
-            "cluster resources at scale",
-          migration,
-          effect.line,
-          relations: [Catalog.qualify(table)],
-          engine: :cockroachdb
-        )
-      ]
-    else
-      :unknown ->
+      severity ->
         [
           Helpers.finding(
             __MODULE__,
-            :warning,
+            severity,
             "adding a column with #{what} on #{Catalog.qualify(table)} " <>
-              "(scale unknown — treated as unbounded) triggers an online backfill that consumes " <>
+              "(#{Helpers.describe_scale(catalog, table)}) triggers an online backfill that consumes " <>
               "cluster resources at scale",
             migration,
             effect.line,
@@ -125,9 +100,6 @@ defmodule Cerbero.Check.ColumnDefaultRewrite do
             engine: :cockroachdb
           )
         ]
-
-      _ ->
-        []
     end
   end
 end

@@ -31,37 +31,28 @@ defmodule Cerbero.DDL.Effects do
             lock: lock,
             cost: cost,
             relations: relations,
-            notes: [version_note(engine, version_num)],
             line: line_of(op)
           }
 
         :unmapped ->
-          conservative(class, relations, engine, version_num, op)
+          conservative(class, relations, op)
       end
     end)
   end
 
-  defp conservative(class, relations, engine, version_num, op) do
+  defp conservative(class, relations, op) do
     %Effect{
       class: class,
       lock: :access_exclusive,
       cost: :rewrite,
       relations: relations,
       unmapped: true,
-      notes: [version_note(engine, version_num)],
       line: line_of(op)
     }
   end
 
   defp line_of(%{line: line}), do: line
   defp line_of(_), do: nil
-
-  defp version_note(:postgres, version_num),
-    do:
-      "assuming PG #{div(version_num, 10_000)} per snapshot; version-conditional verdicts may change"
-
-  defp version_note(:cockroachdb, version_num),
-    do: "assuming CockroachDB #{version_num} per snapshot"
 
   # -- classification of operations into lock-table classes -----------------
 

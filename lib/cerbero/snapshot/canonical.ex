@@ -36,5 +36,10 @@ defmodule Cerbero.Snapshot.Canonical do
 
   defp do_encode(scalar, _depth), do: JSON.encode!(scalar)
 
+  # One shared binary per common depth: encode emits a pad per line, and a
+  # large snapshot is hundreds of thousands of lines.
+  @pads List.to_tuple(Enum.map(0..8, &String.duplicate("  ", &1)))
+
+  defp pad(depth) when depth < tuple_size(@pads), do: elem(@pads, depth)
   defp pad(depth), do: String.duplicate("  ", depth)
 end

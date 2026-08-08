@@ -1,7 +1,7 @@
 defmodule Cerbero.DDL.Effect do
   @moduledoc "What one operation does to the database: lock mode, cost class, touched relations."
 
-  defstruct [:class, :lock, :cost, relations: [], notes: [], unmapped: false, line: nil]
+  defstruct [:class, :lock, :cost, relations: [], unmapped: false, line: nil]
 
   @type lock ::
           :access_exclusive

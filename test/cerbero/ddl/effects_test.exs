@@ -154,11 +154,6 @@ defmodule Cerbero.DDL.EffectsTest do
              effects(migration("for t <- [:a], do: create(index(t, [:x]))"))
   end
 
-  test "version-conditional note: PG version is named" do
-    [%Effect{notes: notes}] = effects(migration("create index(:events, [:org_id])"))
-    assert Enum.any?(notes, &(&1 =~ "assuming PG 15"))
-  end
-
   test "FK column with volatile default emits both add_foreign_key and add_column_volatile_default" do
     assert [
              %Effect{class: :add_foreign_key, lock: :share_row_exclusive},

@@ -64,6 +64,10 @@ defmodule Cerbero.Catalog do
   @spec backfilled?(t(), String.t()) :: boolean()
   def backfilled?(%__MODULE__{backfilled: b}, name), do: MapSet.member?(b, qualify(name))
 
+  @doc "Created by the pending set and never backfilled — still empty by construction, safe to silence."
+  @spec born_empty?(t(), String.t()) :: boolean()
+  def born_empty?(cat, name), do: born?(cat, name) and not backfilled?(cat, name)
+
   @spec scale(t(), String.t()) :: {:rows, non_neg_integer(), non_neg_integer()} | :zero | :unknown
   def scale(%__MODULE__{} = cat, name) do
     cond do
@@ -179,14 +183,6 @@ defmodule Cerbero.Catalog do
           cons,
           &(&1.type == :check and &1.validated and &1.is_not_null_check_on == column_name)
         )
-    end
-  end
-
-  @spec constraint(t(), String.t(), String.t()) :: map() | nil
-  def constraint(cat, table_name, constraint_name) do
-    case table(cat, table_name) do
-      nil -> nil
-      %Table{constraints: cons} -> Enum.find(cons, &(&1.name == constraint_name))
     end
   end
 
@@ -339,16 +335,7 @@ defmodule Cerbero.Catalog do
   defp apply_sql(cat, %Classified{}), do: cat
 
   defp apply_alter({:add_column, name, type, opts}, t) do
-    col = %{
-      name: name,
-      type: overlay_type(type),
-      not_null: Keyword.get(opts, :null) == false,
-      identity: false,
-      generated: nil,
-      default: overlay_default(opts)
-    }
-
-    %{t | columns: t.columns ++ [col]}
+    %{t | columns: t.columns ++ [overlay_column(%{name: name, type: type, opts: opts})]}
   end
 
   defp apply_alter({:modify_column, name, type, opts}, t) do
