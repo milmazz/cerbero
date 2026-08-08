@@ -61,9 +61,12 @@ defmodule Cerbero.Config do
     normalized = Enum.map(repos, &normalize_repo/1)
 
     cond do
-      Enum.any?(normalized, &match?({:error, _}, &1)) ->
-        {:error, bad} = Enum.find(normalized, &match?({:error, _}, &1))
-        {:error, {:bad_config, "repos: #{bad}"}}
+      bad_entry =
+          Enum.find_value(normalized, fn
+            {:error, bad} -> bad
+            _ -> nil
+          end) ->
+        {:error, {:bad_config, "repos: #{bad_entry}"}}
 
       normalized |> Enum.map(& &1.name) |> Enum.uniq() |> length() != length(normalized) ->
         {:error, {:bad_config, "repos: duplicate repo names"}}

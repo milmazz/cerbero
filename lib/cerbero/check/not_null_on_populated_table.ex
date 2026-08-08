@@ -12,19 +12,13 @@ defmodule Cerbero.Check.NotNullOnPopulatedTable do
 
   @impl true
   def run(migration, catalog, config) do
-    {findings, _} =
-      Enum.reduce(migration.operations, {[], catalog}, fn op, {findings, current_catalog} ->
-        new_findings =
-          set_not_null_targets(op)
-          |> Enum.flat_map(fn {table, column, line} ->
-            judge(table, column, line, migration, current_catalog, config)
-          end)
-
-        updated_catalog = Catalog.apply(current_catalog, op)
-        {findings ++ new_findings, updated_catalog}
+    Helpers.fold_operations(migration, catalog, fn op, cat ->
+      op
+      |> set_not_null_targets()
+      |> Enum.flat_map(fn {table, column, line} ->
+        judge(table, column, line, migration, cat, config)
       end)
-
-    findings
+    end)
   end
 
   defp set_not_null_targets(%Op.AlterTable{table: t, ops: ops, line: line}) do
@@ -43,7 +37,7 @@ defmodule Cerbero.Check.NotNullOnPopulatedTable do
     qualified = Catalog.qualify(table)
 
     cond do
-      Catalog.born?(catalog, table) and not Catalog.backfilled?(catalog, table) ->
+      Catalog.born_empty?(catalog, table) ->
         []
 
       match?(%{not_null: true}, Catalog.column(catalog, table, column)) ->
@@ -103,35 +97,21 @@ defmodule Cerbero.Check.NotNullOnPopulatedTable do
   # CockroachDB validates SET NOT NULL against existing rows with an online
   # scan (no table-level blocking lock, unlike PG's ACCESS EXCLUSIVE) — the
   # PG message's "full-table scan under ACCESS EXCLUSIVE" claim is simply
-  # false there. Same tiering as rule 3's CRDB cost note (column_default_rewrite.ex):
-  # >= rows_error warns, >= rows_warning informs, below that is silent;
-  # unknown scale warns (unbounded, never small).
+  # false there. Tiering shared with rule 3's CRDB cost note via
+  # Helpers.crdb_cost_severity/3.
   defp crdb_finding(table, column, line, migration, catalog, config) do
-    qualified = Catalog.qualify(table)
+    case Helpers.crdb_cost_severity(catalog, table, config) do
+      nil ->
+        []
 
-    with {:rows, rows, _} <- Catalog.scale(catalog, table),
-         true <- rows >= config.rows_warning * catalog.multiplier do
-      severity = if rows >= config.rows_error * catalog.multiplier, do: :warning, else: :info
+      severity ->
+        qualified = Catalog.qualify(table)
 
-      [
-        Helpers.finding(
-          __MODULE__,
-          severity,
-          "SET NOT NULL on #{qualified}.#{column} (#{Helpers.describe_scale(catalog, table)}) " <>
-            "runs as an online validation scan on CockroachDB, consuming cluster resources at scale",
-          migration,
-          line,
-          relations: [qualified],
-          engine: :cockroachdb
-        )
-      ]
-    else
-      :unknown ->
         [
           Helpers.finding(
             __MODULE__,
-            :warning,
-            "SET NOT NULL on #{qualified}.#{column} (scale unknown — treated as unbounded) " <>
+            severity,
+            "SET NOT NULL on #{qualified}.#{column} (#{Helpers.describe_scale(catalog, table)}) " <>
               "runs as an online validation scan on CockroachDB, consuming cluster resources at scale",
             migration,
             line,
@@ -139,9 +119,6 @@ defmodule Cerbero.Check.NotNullOnPopulatedTable do
             engine: :cockroachdb
           )
         ]
-
-      _ ->
-        []
     end
   end
 end

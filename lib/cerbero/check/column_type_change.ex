@@ -46,33 +46,22 @@ defmodule Cerbero.Check.ColumnTypeChange do
 
   @impl true
   def run(migration, catalog, config) do
-    {findings, _} =
-      Enum.reduce(migration.operations, {[], catalog}, fn op, {findings, current_catalog} ->
-        new_findings =
-          case op do
-            %Op.AlterTable{table: table, ops: ops, line: line} ->
-              for {:modify_column, col, type, opts} <- ops,
-                  type != nil,
-                  new_type = format_type(type, opts),
-                  current = Catalog.column(current_catalog, table, col),
-                  # Born-this-deploy silencing: if table was created in this deploy and not backfilled, skip
-                  not (Catalog.born?(current_catalog, table) and
-                         not Catalog.backfilled?(current_catalog, table)),
-                  finding <-
-                    judge(table, col, current, new_type, line, migration, current_catalog, config) do
-                finding
-              end
-
-            _ ->
-              []
+    Helpers.fold_operations(migration, catalog, fn op, cat ->
+      case op do
+        %Op.AlterTable{table: table, ops: ops, line: line} ->
+          for {:modify_column, col, type, opts} <- ops,
+              type != nil,
+              new_type = format_type(type, opts),
+              current = Catalog.column(cat, table, col),
+              not Catalog.born_empty?(cat, table),
+              finding <- judge(table, col, current, new_type, line, migration, cat, config) do
+            finding
           end
 
-        # Apply the operation to the catalog for subsequent operations in this migration
-        updated_catalog = Catalog.apply(current_catalog, op)
-        {findings ++ new_findings, updated_catalog}
-      end)
-
-    findings
+        _ ->
+          []
+      end
+    end)
   end
 
   defp judge(_table, _col, %{type: current}, new_type, _line, _m, _cat, _cfg)
@@ -177,18 +166,7 @@ defmodule Cerbero.Check.ColumnTypeChange do
 
   defp format_type(:string, opts), do: "character varying(#{Keyword.get(opts, :size, 255)})"
 
-  defp format_type(:decimal, opts) do
-    precision = Keyword.get(opts, :precision)
-    scale = Keyword.get(opts, :scale)
-
-    case {precision, scale} do
-      {p, s} when is_integer(p) and is_integer(s) -> "numeric(#{p},#{s})"
-      {p, _} when is_integer(p) -> "numeric(#{p})"
-      _ -> "numeric"
-    end
-  end
-
-  defp format_type(:numeric, opts) do
+  defp format_type(type, opts) when type in [:decimal, :numeric] do
     precision = Keyword.get(opts, :precision)
     scale = Keyword.get(opts, :scale)
 

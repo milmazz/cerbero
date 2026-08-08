@@ -12,22 +12,14 @@ defmodule Cerbero.Check.UnsafeIndexCreation do
 
   @impl true
   def run(migration, catalog, config) do
-    {findings, _} =
-      Enum.reduce(migration.operations, {[], catalog}, fn op, {findings, current_catalog} ->
-        new_findings =
-          case op do
-            %Op.CreateIndex{concurrently: false} -> judge(op, migration, current_catalog, config)
-            %Op.DropIndex{concurrently: false} -> judge(op, migration, current_catalog, config)
-            %Op.RawSQL{} -> judge(op, migration, current_catalog, config)
-            _ -> []
-          end
-
-        # Apply the operation to the catalog for subsequent operations in this migration
-        updated_catalog = Catalog.apply(current_catalog, op)
-        {findings ++ new_findings, updated_catalog}
-      end)
-
-    findings
+    Helpers.fold_operations(migration, catalog, fn op, cat ->
+      case op do
+        %Op.CreateIndex{concurrently: false} -> judge(op, migration, cat, config)
+        %Op.DropIndex{concurrently: false} -> judge(op, migration, cat, config)
+        %Op.RawSQL{} -> judge(op, migration, cat, config)
+        _ -> []
+      end
+    end)
   end
 
   defp judge(op, migration, catalog, config) do
@@ -43,7 +35,7 @@ defmodule Cerbero.Check.UnsafeIndexCreation do
         table == nil ->
           []
 
-        Catalog.born?(catalog, table) and not Catalog.backfilled?(catalog, table) ->
+        Catalog.born_empty?(catalog, table) ->
           []
 
         catalog.engine == :cockroachdb ->
@@ -77,10 +69,10 @@ defmodule Cerbero.Check.UnsafeIndexCreation do
       mechanism =
         case effect.cost do
           :full_scan ->
-            "#{lock_name(effect.lock)} lock blocks writes on #{qualified} (#{Helpers.describe_scale(catalog, table)}) for a full-table scan"
+            "#{Helpers.lock_name(effect.lock)} lock blocks writes on #{qualified} (#{Helpers.describe_scale(catalog, table)}) for a full-table scan"
 
           :metadata_only ->
-            "#{lock_name(effect.lock)} lock on #{qualified} (#{Helpers.describe_scale(catalog, table)}) queues behind long-running queries; set a lock_timeout"
+            "#{Helpers.lock_name(effect.lock)} lock on #{qualified} (#{Helpers.describe_scale(catalog, table)}) queues behind long-running queries; set a lock_timeout"
         end
 
       [
@@ -130,10 +122,4 @@ defmodule Cerbero.Check.UnsafeIndexCreation do
       _ -> []
     end
   end
-
-  defp lock_name(:share), do: "SHARE"
-  defp lock_name(:access_exclusive), do: "ACCESS EXCLUSIVE"
-  defp lock_name(:share_update_exclusive), do: "SHARE UPDATE EXCLUSIVE"
-  defp lock_name(:share_row_exclusive), do: "SHARE ROW EXCLUSIVE"
-  defp lock_name(other), do: other |> Atom.to_string() |> String.upcase()
 end

@@ -19,9 +19,7 @@ defmodule Cerbero.Check.FKMissingIndex do
     for op <- migration.operations,
         {table, col, ref, line} <- fk_columns(op),
         not covered?(catalog, table, col, same_migration_indexed),
-        finding <- [emit(table, col, ref, line, migration, config)] do
-      finding
-    end
+        do: emit(table, col, ref, line, migration, config)
   end
 
   defp fk_columns(%Op.AlterTable{table: table, ops: ops, line: line}) do

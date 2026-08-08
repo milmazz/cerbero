@@ -17,9 +17,7 @@ defmodule Cerbero.Check.DMLInMigration do
         kind in [:update, :delete, :insert_select],
         table != nil,
         risky?(catalog, kind, table, config),
-        finding <- [emit(kind, table, line, migration, catalog)] do
-      finding
-    end
+        do: emit(kind, table, line, migration, catalog)
   end
 
   # For INSERT..SELECT the risk scales with the SOURCE size, which the

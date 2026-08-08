@@ -76,20 +76,14 @@ defmodule Cerbero.Check.RawDDLSafety do
 
   @impl true
   def run(migration, catalog, config) do
-    {findings, _} =
-      Enum.reduce(migration.operations, {[], catalog}, fn op, {findings, current_catalog} ->
-        new_findings =
-          case op do
-            %Op.RawSQL{} -> judge(op, migration, current_catalog, config)
-            %Op.RenameOp{} -> judge_dsl(op, migration, current_catalog, config)
-            %Op.DropTable{} -> judge_dsl(op, migration, current_catalog, config)
-            _ -> []
-          end
-
-        {findings ++ new_findings, Catalog.apply(current_catalog, op)}
-      end)
-
-    findings
+    Helpers.fold_operations(migration, catalog, fn op, cat ->
+      case op do
+        %Op.RawSQL{} -> judge(op, migration, cat, config)
+        %Op.RenameOp{} -> judge_dsl(op, migration, cat, config)
+        %Op.DropTable{} -> judge_dsl(op, migration, cat, config)
+        _ -> []
+      end
+    end)
   end
 
   # DSL rename/drop-table: one op -> one effect (AEL + metadata_only per the
@@ -143,7 +137,7 @@ defmodule Cerbero.Check.RawDDLSafety do
       table == nil ->
         []
 
-      Catalog.born?(catalog, table) and not Catalog.backfilled?(catalog, table) ->
+      Catalog.born_empty?(catalog, table) ->
         []
 
       true ->
@@ -172,7 +166,7 @@ defmodule Cerbero.Check.RawDDLSafety do
       table == nil ->
         []
 
-      Catalog.born?(catalog, table) and not Catalog.backfilled?(catalog, table) ->
+      Catalog.born_empty?(catalog, table) ->
         []
 
       true ->
@@ -203,7 +197,7 @@ defmodule Cerbero.Check.RawDDLSafety do
 
   defp mechanism(effect, qualified, catalog, table) do
     scale_desc = Helpers.describe_scale(catalog, table)
-    lock_desc = lock_name(effect.lock)
+    lock_desc = Helpers.lock_name(effect.lock)
 
     cond do
       effect.lock in @write_blocking and effect.cost in [:full_scan, :rewrite] ->
@@ -232,7 +226,7 @@ defmodule Cerbero.Check.RawDDLSafety do
         __MODULE__,
         :info,
         "cannot resolve the table for this #{describe_class(effect.class)} statement against the " <>
-          "snapshot catalog; #{lock_name(effect.lock)} on its table regardless of size — " <>
+          "snapshot catalog; #{Helpers.lock_name(effect.lock)} on its table regardless of size — " <>
           "set a lock_timeout",
         migration,
         effect.line,
@@ -262,12 +256,4 @@ defmodule Cerbero.Check.RawDDLSafety do
       nil -> :unresolved
     end
   end
-
-  defp lock_name(:share), do: "SHARE"
-  defp lock_name(:access_exclusive), do: "ACCESS EXCLUSIVE"
-  defp lock_name(:share_update_exclusive), do: "SHARE UPDATE EXCLUSIVE"
-  defp lock_name(:share_row_exclusive), do: "SHARE ROW EXCLUSIVE"
-  defp lock_name(:row_exclusive), do: "ROW EXCLUSIVE"
-  defp lock_name(:online_schema_change), do: "online schema change"
-  defp lock_name(other), do: other |> Atom.to_string() |> String.upcase()
 end
