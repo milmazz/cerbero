@@ -3,6 +3,7 @@ defmodule Cerbero.SnapshotTest do
 
   alias Cerbero.Snapshot
   alias Cerbero.Snapshot.Canonical
+  alias Cerbero.Snapshot.Signature
   alias Cerbero.Test.SnapshotBuilder
 
   @fixture "test/fixtures/snapshots/huge_table.json"
@@ -146,6 +147,63 @@ defmodule Cerbero.SnapshotTest do
     } do
       assert {:error, {:format_too_old, 0, "re-export the snapshot"}} =
                reload_with(tmp_dir, &Map.put(&1, "format_version", 0))
+    end
+  end
+
+  describe "write_stamped!/2" do
+    @tag :tmp_dir
+    test "writes an already-stamped map byte-identically to write!/2", %{tmp_dir: tmp_dir} do
+      stamped = SnapshotBuilder.build(%{})
+
+      stamped_path = Path.join(tmp_dir, "stamped.json")
+      restamped_path = Path.join(tmp_dir, "restamped.json")
+      Snapshot.write_stamped!(stamped, stamped_path)
+      Snapshot.write!(stamped, restamped_path)
+
+      assert File.read!(stamped_path) == File.read!(restamped_path)
+      assert {:ok, %Snapshot{}} = Snapshot.load(stamped_path)
+    end
+
+    @tag :tmp_dir
+    test "does NOT re-stamp: a wrong embedded checksum is written verbatim", %{tmp_dir: tmp_dir} do
+      # This is the contract split from write!/2: signature tests mutate
+      # stamped maps and rely on write! re-stamping; write_stamped! must
+      # instead preserve the map exactly (the CLI signs over the stamped
+      # checksum — a re-stamp there would be wasted work, a rewrite here
+      # would mask corruption).
+      bogus = "sha256:" <> String.duplicate("0", 64)
+      tampered = Map.put(SnapshotBuilder.build(%{}), "checksum", bogus)
+
+      path = Path.join(tmp_dir, "tampered.json")
+      Snapshot.write_stamped!(tampered, path)
+
+      assert File.read!(path) =~ bogus
+      assert {:error, {:checksum_mismatch, ^bogus, _actual}} = Snapshot.load(path)
+    end
+
+    @tag :tmp_dir
+    test "stamp -> sign -> write_stamped! round-trips through load with verify keys", %{
+      tmp_dir: tmp_dir
+    } do
+      # The CLI's signed-export pipeline, end to end.
+      {pub, seed} = Signature.generate()
+      stamped = SnapshotBuilder.build(%{})
+      path = Path.join(tmp_dir, "signed.json")
+
+      stamped
+      |> Signature.sign(seed)
+      |> Snapshot.write_stamped!(path)
+
+      assert {:ok, %Snapshot{}} = Snapshot.load(path, verify_keys: [pub])
+    end
+
+    @tag :tmp_dir
+    test "refuses an unstamped map loudly", %{tmp_dir: tmp_dir} do
+      raw = Map.delete(SnapshotBuilder.build(%{}), "checksum")
+      path = Path.join(tmp_dir, "unstamped.json")
+
+      assert_raise ArgumentError, ~r/stamped/, fn -> Snapshot.write_stamped!(raw, path) end
+      refute File.exists?(path)
     end
   end
 

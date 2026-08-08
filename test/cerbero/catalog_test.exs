@@ -5,7 +5,9 @@ defmodule Cerbero.CatalogTest do
 
   alias Cerbero.Catalog
   alias Cerbero.Config
+  alias Cerbero.Operation, as: Op
   alias Cerbero.Snapshot.Staleness
+  alias Cerbero.SQL.Classifier.Classified
 
   defp catalog(tables, snapshot_overrides \\ %{}, staleness_overrides \\ []) do
     snapshot = build_snapshot(Map.merge(%{"tables" => tables}, snapshot_overrides))
@@ -118,6 +120,116 @@ defmodule Cerbero.CatalogTest do
       ])
 
     assert Catalog.scale(cat, "events") == :unknown
+  end
+
+  test "dropping a partition removes it from the parent's sum" do
+    cat =
+      catalog([
+        table("events", %{"partitioned" => true, "reltuples" => 0.0, "n_live_tup" => 0}),
+        table("events_p0", %{
+          "partition_of" => "public.events",
+          "n_live_tup" => 100,
+          "reltuples" => 100.0,
+          "heap_bytes" => 10
+        }),
+        table("events_p1", %{
+          "partition_of" => "public.events",
+          "n_live_tup" => 250,
+          "reltuples" => 250.0,
+          "heap_bytes" => 20
+        })
+      ])
+
+    dropped = Catalog.apply(cat, %Op.DropTable{table: "events_p0"})
+
+    assert Catalog.scale(dropped, "events") == {:rows, 250, 20}
+    refute Catalog.known?(dropped, "events_p0")
+  end
+
+  test "dropping every partition degrades the parent's sum to :unknown, not zero" do
+    cat =
+      catalog([
+        table("events", %{"partitioned" => true, "reltuples" => 0.0, "n_live_tup" => 0}),
+        table("events_p0", %{
+          "partition_of" => "public.events",
+          "n_live_tup" => 100,
+          "reltuples" => 100.0
+        })
+      ])
+
+    dropped = Catalog.apply(cat, %Op.DropTable{table: "events_p0"})
+
+    assert Catalog.scale(dropped, "events") == :unknown
+  end
+
+  test "dropping the partitioned parent itself: scale is :unknown, table no longer known" do
+    cat =
+      catalog([
+        table("events", %{"partitioned" => true, "reltuples" => 0.0, "n_live_tup" => 0}),
+        table("events_p0", %{
+          "partition_of" => "public.events",
+          "n_live_tup" => 100,
+          "reltuples" => 100.0
+        })
+      ])
+
+    dropped = Catalog.apply(cat, %Op.DropTable{table: "events"})
+
+    assert Catalog.scale(dropped, "events") == :unknown
+    refute Catalog.known?(dropped, "events")
+  end
+
+  test "raw SQL DROP TABLE of a partition removes it from the parent's sum too" do
+    cat =
+      catalog([
+        table("events", %{"partitioned" => true, "reltuples" => 0.0, "n_live_tup" => 0}),
+        table("events_p0", %{
+          "partition_of" => "public.events",
+          "n_live_tup" => 100,
+          "reltuples" => 100.0,
+          "heap_bytes" => 10
+        }),
+        table("events_p1", %{
+          "partition_of" => "public.events",
+          "n_live_tup" => 250,
+          "reltuples" => 250.0,
+          "heap_bytes" => 20
+        })
+      ])
+
+    op = %Op.RawSQL{
+      classified: [%Classified{class: :drop_table, table: "events_p0"}]
+    }
+
+    dropped = Catalog.apply(cat, op)
+
+    assert Catalog.scale(dropped, "events") == {:rows, 250, 20}
+  end
+
+  test "pending CreateTable over a partition's name: the reborn table leaves the parent's sum" do
+    # born_table/3 gives overlay-born tables partition_of nil, so a
+    # drop-then-recreate (or plain recreate) of a partition's name must not
+    # keep contributing the old partition's rows to the parent.
+    cat =
+      catalog([
+        table("events", %{"partitioned" => true, "reltuples" => 0.0, "n_live_tup" => 0}),
+        table("events_p0", %{
+          "partition_of" => "public.events",
+          "n_live_tup" => 100,
+          "reltuples" => 100.0,
+          "heap_bytes" => 10
+        }),
+        table("events_p1", %{
+          "partition_of" => "public.events",
+          "n_live_tup" => 250,
+          "reltuples" => 250.0,
+          "heap_bytes" => 20
+        })
+      ])
+
+    reborn = Catalog.apply(cat, %Op.CreateTable{table: "events_p0", columns: []})
+
+    assert Catalog.scale(reborn, "events") == {:rows, 250, 20}
   end
 
   test "degraded staleness makes every scale unknown" do
