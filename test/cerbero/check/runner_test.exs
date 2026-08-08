@@ -56,6 +56,15 @@ defmodule Cerbero.Check.RunnerTest do
     %{config: config}
   end
 
+  test "every builtin check and SnapshotHealth describes itself" do
+    for mod <- Runner.default_checks() ++ [Cerbero.Check.SnapshotHealth] do
+      assert Code.ensure_loaded?(mod)
+      assert function_exported?(mod, :description, 0), "#{inspect(mod)} lacks description/0"
+      assert is_binary(mod.description())
+      assert mod.description() != ""
+    end
+  end
+
   test "select_pending: applied and pre-cutoff migrations are excluded" do
     migrations = [
       %Migration{version: "20250101000000"},

@@ -10,6 +10,9 @@ defmodule Cerbero.Check.FKMissingIndex do
   def id, do: :fk_missing_index
 
   @impl true
+  def description, do: "Foreign key whose referencing column has no covering index"
+
+  @impl true
   def run(migration, catalog, config) do
     same_migration_indexed =
       for %Op.CreateIndex{table: t, keys: [first | _]} <- migration.operations,

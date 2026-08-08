@@ -144,6 +144,14 @@ It does not certify migrations as safe; it judges the statement, not the moment.
   each rule declares — so JSON consumers can filter without parsing
   messages. Backward-compatible addition; `cerbero_findings_version`
   stays 1. Human and SARIF outputs are unchanged.
+- Checks describe themselves: the `Cerbero.Check` behaviour gained an
+  optional `description/0` callback (a one-line summary of what the check
+  judges), implemented by every built-in check. SARIF rule
+  `shortDescription`s now come from the check modules instead of a
+  hardcoded catalog inside the formatter, so a third-party `extra_checks`
+  module exporting `description/0` gets its description in SARIF output
+  rather than degrading to its bare id (which remains the fallback for
+  checks without one). SARIF bytes for built-in checks are unchanged.
 
 ### Fixed
 

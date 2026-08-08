@@ -13,6 +13,9 @@ defmodule Cerbero.Check.UnsafeIndexCreation do
   def id, do: :unsafe_index_creation
 
   @impl true
+  def description, do: "Non-concurrent index creation takes a SHARE lock that blocks writes for a full-table scan"
+
+  @impl true
   def run(migration, catalog, config) do
     Helpers.fold_operations(migration, catalog, fn op, cat ->
       case op do

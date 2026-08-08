@@ -10,9 +10,18 @@ defmodule Cerbero.Check do
   checks. Registered checks get the runner's machinery for free:
   `skip_checks`, `severity_overrides`, `@cerbero_skip`, and the
   lock-timeout attestation all key on the check's `id/0`.
+
+  `description/0` is an optional extension point: a one-line, human-readable
+  summary of what the check judges. The CLI collects descriptions from the
+  configured check modules and feeds them to formatters that carry a rule
+  catalog (SARIF `shortDescription`). A check without `description/0` still
+  works everywhere — its id stands in for the description.
   """
 
   @callback id() :: atom()
   @callback run(Cerbero.Migration.t(), Cerbero.Catalog.t(), Cerbero.Config.t()) ::
               [Cerbero.Finding.t()]
+  @callback description() :: String.t()
+
+  @optional_callbacks [description: 0]
 end

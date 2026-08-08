@@ -12,6 +12,9 @@ defmodule Cerbero.Check.FKValidationScan do
   def id, do: :fk_validation_scan
 
   @impl true
+  def description, do: "ADD FOREIGN KEY scans the referencing table while blocking writes on the referenced table"
+
+  @impl true
   def run(migration, catalog, config) do
     # Skip CRDB: FK adds are online schema changes
     if catalog.engine == :cockroachdb do

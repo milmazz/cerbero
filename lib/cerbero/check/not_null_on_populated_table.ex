@@ -12,6 +12,9 @@ defmodule Cerbero.Check.NotNullOnPopulatedTable do
   def id, do: :not_null_on_populated_table
 
   @impl true
+  def description, do: "SET NOT NULL scans a populated table under an exclusive lock unless a validated CHECK proves it"
+
+  @impl true
   def run(migration, catalog, config) do
     Helpers.fold_operations(migration, catalog, fn op, cat ->
       op
