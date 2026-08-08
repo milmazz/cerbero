@@ -23,7 +23,7 @@ defmodule Cerbero.SQL.Classifier do
   """
 
   defmodule Classified do
-    @moduledoc false
+    @moduledoc "One classified raw SQL statement: its class plus the identifiers the patterns captured."
     defstruct class: :unknown,
               table: nil,
               column: nil,
