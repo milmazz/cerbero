@@ -1,11 +1,14 @@
 defmodule Cerbero.Check.SnapshotHealthTest do
   use ExUnit.Case, async: true
 
-  alias Cerbero.{Catalog, Config, Migration}
+  import Cerbero.Test.SnapshotBuilder
+
+  alias Cerbero.Catalog
   alias Cerbero.Check.SnapshotHealth
+  alias Cerbero.Config
+  alias Cerbero.Migration
   alias Cerbero.Migration.Parser
   alias Cerbero.Snapshot.Staleness
-  import Cerbero.Test.SnapshotBuilder
 
   defp run_health(opts) do
     snapshot = build_snapshot(Keyword.get(opts, :snapshot, %{}))

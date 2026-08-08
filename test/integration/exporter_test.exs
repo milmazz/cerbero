@@ -1,9 +1,10 @@
 defmodule Cerbero.Integration.ExporterTest do
   use ExUnit.Case, async: false
-  @moduletag :postgres
 
   alias Cerbero.Snapshot
   alias Cerbero.Snapshot.Exporter
+
+  @moduletag :postgres
 
   @url "postgres://postgres:cerbero@localhost:54316/cerbero_test"
   # Same server, as seen from inside the pg16 container (used only when the

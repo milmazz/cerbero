@@ -27,11 +27,13 @@ defmodule Cerbero.Integration.CRDBTest do
   """
 
   use ExUnit.Case, async: false
-  @moduletag :integration
 
   alias Cerbero.Catalog
   alias Cerbero.Snapshot
-  alias Cerbero.Snapshot.{Exporter, Staleness}
+  alias Cerbero.Snapshot.Exporter
+  alias Cerbero.Snapshot.Staleness
+
+  @moduletag :integration
 
   @url "postgresql://root@localhost:26257/defaultdb?sslmode=disable"
 
@@ -120,9 +122,7 @@ defmodule Cerbero.Integration.CRDBTest do
         :ok
 
       other ->
-        flunk(
-          "expected {:rows, >0, _} or :unknown, never a fabricated zero; got #{inspect(other)}"
-        )
+        flunk("expected {:rows, >0, _} or :unknown, never a fabricated zero; got #{inspect(other)}")
     end
 
     refute match?({:rows, 0, _}, Catalog.scale(catalog, "rowcount_check"))

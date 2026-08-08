@@ -1,7 +1,8 @@
 defmodule Cerbero.Check.FKTest do
   use Cerbero.Test.RuleCase
 
-  alias Cerbero.Check.{FKMissingIndex, FKValidationScan}
+  alias Cerbero.Check.FKMissingIndex
+  alias Cerbero.Check.FKValidationScan
 
   defp orgs,
     do:

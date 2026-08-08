@@ -1,9 +1,10 @@
 defmodule Cerbero.SnapshotDecodeTest do
   use ExUnit.Case, async: true
 
+  import Cerbero.Test.SnapshotBuilder
+
   alias Cerbero.Snapshot
   alias Cerbero.Test.SnapshotBuilder
-  import Cerbero.Test.SnapshotBuilder
 
   @fixture "test/fixtures/snapshots/huge_table.json"
 
@@ -19,7 +20,7 @@ defmodule Cerbero.SnapshotDecodeTest do
 
     assert events.n_live_tup == 412_000_000
     assert [%{name: "id"}, %{name: "org_id"} = org_id | _] = events.columns
-    refute is_nil(org_id.not_null)
+    assert org_id.not_null
 
     assert Enum.any?(
              events.constraints,
@@ -36,7 +37,7 @@ defmodule Cerbero.SnapshotDecodeTest do
         ] do
       raw = @fixture |> File.read!() |> JSON.decode!()
       path = Path.join(tmp_dir, "unknown_field.json")
-      Cerbero.Snapshot.write!(path_fun.(raw), path)
+      Snapshot.write!(path_fun.(raw), path)
       assert {:error, {:unknown_fields, _path, ["surprise"]}} = Snapshot.load(path)
     end
   end
@@ -46,13 +47,13 @@ defmodule Cerbero.SnapshotDecodeTest do
     raw = @fixture |> File.read!() |> JSON.decode!()
     bad = put_in(raw, ["engine", "name"], "mysql")
     path = Path.join(tmp_dir, "bad_enum.json")
-    Cerbero.Snapshot.write!(bad, path)
+    Snapshot.write!(bad, path)
     assert {:error, {:invalid_value, _path, "mysql"}} = Snapshot.load(path)
   end
 
   describe "crash-safety regression tests" do
     test "returns error, not crash, when required 'tables' field is missing" do
-      raw = build() |> Map.delete("tables")
+      raw = Map.delete(build(), "tables")
       assert {:error, {:invalid_value, _, :not_a_list}} = Snapshot.decode(raw)
     end
 

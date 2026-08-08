@@ -17,8 +17,10 @@ defmodule Cerbero.CLI.Snapshot do
   exactly where `mix cerbero.check` reads it.
   """
 
-  alias Cerbero.{Config, Snapshot}
-  alias Cerbero.Snapshot.{Exporter, Signature}
+  alias Cerbero.Config
+  alias Cerbero.Snapshot
+  alias Cerbero.Snapshot.Exporter
+  alias Cerbero.Snapshot.Signature
 
   @switches [
     url: :string,
@@ -148,8 +150,7 @@ defmodule Cerbero.CLI.Snapshot do
 
   defp maybe_sign(raw, nil), do: raw
 
-  defp maybe_sign(raw, seed),
-    do: raw |> Snapshot.stamp() |> Signature.sign(seed)
+  defp maybe_sign(raw, seed), do: raw |> Snapshot.stamp() |> Signature.sign(seed)
 
   defp error(io, reason) do
     IO.write(io, "cerbero: error: #{inspect(reason)}\n")

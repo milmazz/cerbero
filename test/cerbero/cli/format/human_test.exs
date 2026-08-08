@@ -9,9 +9,7 @@ defmodule Cerbero.CLI.Format.HumanTest do
   end
 
   defp render(findings, opts \\ [verbose: false, color: false]) do
-    Human.render(findings, "summary line", Keyword.get(opts, :verbose, false),
-      color: Keyword.get(opts, :color, false)
-    )
+    Human.render(findings, "summary line", Keyword.get(opts, :verbose, false), color: Keyword.get(opts, :color, false))
   end
 
   test "errors are listed before warnings regardless of file/line order" do

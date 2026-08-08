@@ -1,21 +1,25 @@
 defmodule Cerbero.Test.RuleCase do
   @moduledoc "Shared scaffolding for rule tests: parse inline source, judge against a built snapshot."
 
+  alias Cerbero.Catalog
+  alias Cerbero.Check.Runner
+  alias Cerbero.Config
+  alias Cerbero.Migration.Parser
+  alias Cerbero.Snapshot.Staleness
   alias Cerbero.Test.SnapshotBuilder
 
   defmacro __using__(_) do
     quote do
       use ExUnit.Case, async: true
-      import Cerbero.Test.SnapshotBuilder
+
       import Cerbero.Test.RuleCase
-      alias Cerbero.{Catalog, Config, Finding}
+      import Cerbero.Test.SnapshotBuilder
+
+      alias Cerbero.Catalog
+      alias Cerbero.Config
+      alias Cerbero.Finding
     end
   end
-
-  alias Cerbero.{Catalog, Config}
-  alias Cerbero.Check.Runner
-  alias Cerbero.Migration.Parser
-  alias Cerbero.Snapshot.Staleness
 
   def judge(checks, tables, body, opts \\ []) do
     snapshot_overrides = Keyword.get(opts, :snapshot, %{})

@@ -5,8 +5,12 @@ defmodule Cerbero.Check.SnapshotHealth do
   safety.
   """
 
-  alias Cerbero.{Catalog, Config, Finding, Migration, Snapshot}
+  alias Cerbero.Catalog
+  alias Cerbero.Config
   alias Cerbero.DDL.Effects
+  alias Cerbero.Finding
+  alias Cerbero.Migration
+  alias Cerbero.Snapshot
   alias Cerbero.Snapshot.Staleness
 
   @id :snapshot_health
@@ -123,9 +127,7 @@ defmodule Cerbero.Check.SnapshotHealth do
     end
   end
 
-  defp version_to_datetime(
-         <<y::binary-4, mo::binary-2, d::binary-2, h::binary-2, mi::binary-2, s::binary-2>>
-       ) do
+  defp version_to_datetime(<<y::binary-4, mo::binary-2, d::binary-2, h::binary-2, mi::binary-2, s::binary-2>>) do
     case DateTime.from_iso8601("#{y}-#{mo}-#{d}T#{h}:#{mi}:#{s}Z") do
       {:ok, dt, 0} -> dt
       _ -> nil

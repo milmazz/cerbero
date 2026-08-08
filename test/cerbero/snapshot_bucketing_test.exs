@@ -1,8 +1,9 @@
 defmodule Cerbero.Snapshot.BucketingTest do
   use ExUnit.Case, async: true
 
-  alias Cerbero.Snapshot.Bucketing
   import Cerbero.Test.SnapshotBuilder
+
+  alias Cerbero.Snapshot.Bucketing
 
   describe "bucket/1" do
     test "buckets positive numbers to the power-of-ten floor" do

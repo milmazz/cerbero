@@ -1,7 +1,10 @@
 defmodule Cerbero.Check.Helpers do
   @moduledoc "Shared rule scaffolding: the migration-local fold, message construction, finding assembly."
 
-  alias Cerbero.{Catalog, Config, Finding, Migration}
+  alias Cerbero.Catalog
+  alias Cerbero.Config
+  alias Cerbero.Finding
+  alias Cerbero.Migration
 
   @doc """
   The migration-local fold: judges each operation against the catalog as the

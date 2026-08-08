@@ -1,7 +1,8 @@
 defmodule Cerbero.DDL.LocksTest do
   use ExUnit.Case, async: true
 
-  alias Cerbero.DDL.{Effects, Locks}
+  alias Cerbero.DDL.Effects
+  alias Cerbero.DDL.Locks
 
   # The v1 PG table from design §4, spot-checked.
   @expected [

@@ -9,7 +9,8 @@ defmodule Cerbero.Snapshot.Staleness do
   rule, which consumes this struct.
   """
 
-  alias Cerbero.{Config, Snapshot}
+  alias Cerbero.Config
+  alias Cerbero.Snapshot
 
   defstruct [:age_days, :scale_mode, :threshold_multiplier]
 
@@ -26,8 +27,7 @@ defmodule Cerbero.Snapshot.Staleness do
     %__MODULE__{
       age_days: age_days,
       scale_mode: if(age_days > config.stale_degrade_days, do: :unbounded, else: :exact),
-      threshold_multiplier:
-        if(age_days > config.headroom_days, do: config.headroom_multiplier, else: 1.0)
+      threshold_multiplier: if(age_days > config.headroom_days, do: config.headroom_multiplier, else: 1.0)
     }
   end
 end

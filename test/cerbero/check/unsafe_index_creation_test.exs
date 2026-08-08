@@ -20,9 +20,7 @@ defmodule Cerbero.Check.UnsafeIndexCreationTest do
     assert [] = judge_rule([small], "create index(:prefs, [:user_id])")
 
     assert [%Finding{severity: :warning}] =
-             judge_rule([small], "create index(:prefs, [:user_id])",
-               config: [strict_concurrent_index: true]
-             )
+             judge_rule([small], "create index(:prefs, [:user_id])", config: [strict_concurrent_index: true])
   end
 
   test "silent on born_this_deploy tables" do

@@ -57,27 +57,22 @@ defmodule Cerbero.Check.NeverSilentTest do
     # (Effects.add_column_class/1, which inspects the `default:`/
     # `generated:` opts) can produce these two classes. Already covered by
     # rule 3's own DSL-form tests (default_rewrite_test.exs).
-    add_column_volatile_default:
-      "DSL-only — raw SQL ADD COLUMN always classifies as constant_default",
-    add_column_generated_stored:
-      "DSL-only — raw SQL ADD COLUMN always classifies as constant_default"
+    add_column_volatile_default: "DSL-only — raw SQL ADD COLUMN always classifies as constant_default",
+    add_column_generated_stored: "DSL-only — raw SQL ADD COLUMN always classifies as constant_default"
   }
 
   # One representative raw-SQL statement per reachable, qualifying class.
   @sample_sql %{
     create_index: ~s|CREATE INDEX events_never_silent_idx ON events (org_id)|,
-    create_index_concurrently:
-      ~s|CREATE INDEX CONCURRENTLY events_never_silent_idx2 ON events (org_id)|,
+    create_index_concurrently: ~s|CREATE INDEX CONCURRENTLY events_never_silent_idx2 ON events (org_id)|,
     drop_index: ~s|DROP INDEX events_never_silent_missing_idx|,
     add_column_constant_default: ~s|ALTER TABLE events ADD COLUMN flag integer DEFAULT 0|,
     add_primary_key: ~s|ALTER TABLE events ADD PRIMARY KEY (id)|,
     add_unique: ~s|ALTER TABLE events ADD UNIQUE (org_id)|,
     set_not_null: ~s|ALTER TABLE events ALTER COLUMN org_id SET NOT NULL|,
     add_check: ~s|ALTER TABLE events ADD CONSTRAINT events_org_id_positive CHECK (org_id > 0)|,
-    add_check_not_valid:
-      ~s|ALTER TABLE events ADD CONSTRAINT events_org_id_positive2 CHECK (org_id > 0) NOT VALID|,
-    add_foreign_key:
-      ~s|ALTER TABLE events ADD CONSTRAINT events_org_fk FOREIGN KEY (org_id) REFERENCES orgs (id)|,
+    add_check_not_valid: ~s|ALTER TABLE events ADD CONSTRAINT events_org_id_positive2 CHECK (org_id > 0) NOT VALID|,
+    add_foreign_key: ~s|ALTER TABLE events ADD CONSTRAINT events_org_fk FOREIGN KEY (org_id) REFERENCES orgs (id)|,
     add_foreign_key_not_valid:
       ~s|ALTER TABLE events ADD CONSTRAINT events_org_fk2 FOREIGN KEY (org_id) REFERENCES orgs (id) NOT VALID|,
     validate_foreign_key: ~s|ALTER TABLE events VALIDATE CONSTRAINT events_org_fk2|,

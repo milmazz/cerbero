@@ -102,13 +102,11 @@ defmodule Cerbero.Config do
   end
 
   # Snapshot tamper-proofing trust anchors: base64 Ed25519 public keys.
-  defp validate_verify_keys(%__MODULE__{snapshot_verify_keys: keys} = config)
-       when is_list(keys) do
+  defp validate_verify_keys(%__MODULE__{snapshot_verify_keys: keys} = config) when is_list(keys) do
     if Enum.all?(keys, &(is_binary(&1) and match?({:ok, _}, Base.decode64(&1)))) do
       {:ok, config}
     else
-      {:error,
-       {:bad_config, "snapshot_verify_keys must be base64 public keys, got: #{inspect(keys)}"}}
+      {:error, {:bad_config, "snapshot_verify_keys must be base64 public keys, got: #{inspect(keys)}"}}
     end
   end
 

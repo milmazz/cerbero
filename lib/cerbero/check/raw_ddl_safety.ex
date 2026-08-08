@@ -24,10 +24,11 @@ defmodule Cerbero.Check.RawDDLSafety do
   """
   @behaviour Cerbero.Check
 
-  alias Cerbero.{Catalog, Severity}
+  alias Cerbero.Catalog
   alias Cerbero.Check.Helpers
   alias Cerbero.DDL.Effects
   alias Cerbero.Operation, as: Op
+  alias Cerbero.Severity
 
   @impl true
   def id, do: :raw_ddl_safety
@@ -111,8 +112,7 @@ defmodule Cerbero.Check.RawDDLSafety do
     truncate_finding(effect, migration, catalog)
   end
 
-  defp judge_effect(c, %{class: class} = effect, migration, catalog, config)
-       when class in @resolve_classes do
+  defp judge_effect(c, %{class: class} = effect, migration, catalog, config) when class in @resolve_classes do
     case resolve_target(catalog, c) do
       {:ok, table} ->
         generic_judge(%{effect | relations: [target: table]}, migration, catalog, config)

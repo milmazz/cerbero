@@ -7,8 +7,9 @@ defmodule Cerbero.PrivacyTest do
   """
   use ExUnit.Case, async: true
 
-  alias Cerbero.Snapshot
   import Cerbero.Test.SnapshotBuilder
+
+  alias Cerbero.Snapshot
 
   @committed_fixtures Path.wildcard("test/fixtures/snapshots/*.json")
 
@@ -45,8 +46,7 @@ defmodule Cerbero.PrivacyTest do
 
   defp string_leaves(map, path \\ [])
 
-  defp string_leaves(map, path) when is_map(map),
-    do: Enum.flat_map(map, fn {k, v} -> string_leaves(v, path ++ [k]) end)
+  defp string_leaves(map, path) when is_map(map), do: Enum.flat_map(map, fn {k, v} -> string_leaves(v, path ++ [k]) end)
 
   defp string_leaves(list, path) when is_list(list),
     do: list |> Enum.with_index() |> Enum.flat_map(fn {v, i} -> string_leaves(v, path ++ [i]) end)

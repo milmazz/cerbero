@@ -1,7 +1,10 @@
 defmodule Cerbero.Check.Runner do
   @moduledoc "Orders pending migrations, threads the overlay, applies skips and severity overrides."
 
-  alias Cerbero.{Catalog, Config, Finding, Migration}
+  alias Cerbero.Catalog
+  alias Cerbero.Config
+  alias Cerbero.Finding
+  alias Cerbero.Migration
 
   @spec default_checks() :: [module()]
   def default_checks do
@@ -44,7 +47,8 @@ defmodule Cerbero.Check.Runner do
         findings =
           checks
           |> Enum.flat_map(fn check ->
-            check.run(migration, cat, config)
+            migration
+            |> check.run(cat, config)
             |> Enum.map(&{check.id(), &1})
           end)
           |> Enum.map(fn {check_module_id, finding} ->
@@ -105,9 +109,7 @@ defmodule Cerbero.Check.Runner do
   # that talk about a lock a `lock_timeout` would bound — it never changes
   # severity or silences anything; wired centrally here so every rule gets
   # it for free instead of each one re-implementing the same string check.
-  defp apply_lock_timeout_attestation(%Finding{message: message} = finding, %Config{
-         lock_timeout_attested: true
-       }) do
+  defp apply_lock_timeout_attestation(%Finding{message: message} = finding, %Config{lock_timeout_attested: true}) do
     if message =~ "lock_timeout" or message =~ "ACCESS EXCLUSIVE" do
       %{finding | message: message <> " (lock_timeout attested in .cerbero.exs)"}
     else

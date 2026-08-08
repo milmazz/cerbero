@@ -1,10 +1,14 @@
 defmodule Cerbero.CLI.Check do
   @moduledoc "argv -> findings -> formatted output -> exit code. Injectable clock and IO."
 
-  alias Cerbero.{Catalog, Config, Finding, Snapshot}
-  alias Cerbero.Check.{Runner, SnapshotHealth}
+  alias Cerbero.Catalog
+  alias Cerbero.Check.Runner
+  alias Cerbero.Check.SnapshotHealth
   alias Cerbero.CLI.Format
+  alias Cerbero.Config
+  alias Cerbero.Finding
   alias Cerbero.Migration.Parser
+  alias Cerbero.Snapshot
   alias Cerbero.Snapshot.Staleness
 
   @switches [
@@ -78,8 +82,7 @@ defmodule Cerbero.CLI.Check do
       {name, repos} ->
         case Enum.find(repos, &(&1.name == name)) do
           nil ->
-            {:error,
-             "unknown repo #{name} (configured: #{Enum.map_join(repos, ", ", & &1.name)})"}
+            {:error, "unknown repo #{name} (configured: #{Enum.map_join(repos, ", ", & &1.name)})"}
 
           repo ->
             {:ok, {:single, apply_repo(config, repo)}}
@@ -205,8 +208,7 @@ defmodule Cerbero.CLI.Check do
 
   defp first_migrations_path([dir | _]) when is_binary(dir), do: {:ok, dir}
 
-  defp first_migrations_path(_),
-    do: {:error, "config migrations_paths is empty; pass --migrations or fix .cerbero.exs"}
+  defp first_migrations_path(_), do: {:error, "config migrations_paths is empty; pass --migrations or fix .cerbero.exs"}
 
   defp ensure_directory(dir) do
     if File.dir?(dir), do: :ok, else: {:error, "migrations directory not found: #{dir}"}
@@ -240,7 +242,8 @@ defmodule Cerbero.CLI.Check do
     pending = Runner.select_pending(migrations, snapshot.applied_migrations, config.start_after)
 
     health =
-      SnapshotHealth.run_global(snapshot, staleness, migrations, pending, catalog, config)
+      snapshot
+      |> SnapshotHealth.run_global(staleness, migrations, pending, catalog, config)
       |> Runner.apply_policies(SnapshotHealth.id(), config)
 
     {findings, catalog_after_up} = Runner.run(pending, catalog, config)

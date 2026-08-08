@@ -9,7 +9,8 @@ defmodule Cerbero.Snapshot do
   a valid signature from one of those keys to load.
   """
 
-  alias Cerbero.Snapshot.{Canonical, Signature}
+  alias Cerbero.Snapshot.Canonical
+  alias Cerbero.Snapshot.Signature
 
   defstruct [
     :format_version,
@@ -301,8 +302,7 @@ defmodule Cerbero.Snapshot do
   defp decode_key(k) do
     with :ok <- strict(k, @key_fields, "index key"),
          {:ok, kind} <- enum(k["kind"], @key_kinds, "key.kind") do
-      {:ok,
-       if(kind == :column, do: %{kind: :column, name: k["name"]}, else: %{kind: :expression})}
+      {:ok, if(kind == :column, do: %{kind: :column, name: k["name"]}, else: %{kind: :expression})}
     end
   end
 
@@ -367,7 +367,8 @@ defmodule Cerbero.Snapshot do
   end
 
   defp map_while_ok(list, fun) when is_list(list) do
-    Enum.reduce_while(list, {:ok, []}, fn item, {:ok, acc} ->
+    list
+    |> Enum.reduce_while({:ok, []}, fn item, {:ok, acc} ->
       case fun.(item) do
         {:ok, decoded} -> {:cont, {:ok, [decoded | acc]}}
         {:error, _} = e -> {:halt, e}

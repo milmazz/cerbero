@@ -32,67 +32,75 @@ defmodule Cerbero.Test.SnapshotBuilder do
 
   @doc "A table map with sane small defaults; override what the test cares about."
   def table(name, overrides \\ %{}) do
-    %{
-      "columns" => [column("id", %{"type" => "bigint"})],
-      "constraints" => [],
-      "heap_bytes" => 8192,
-      "idx_scan" => 0,
-      "indexes" => [],
-      "last_analyze" => nil,
-      "last_autoanalyze" => "2026-06-30T00:00:00Z",
-      "n_live_tup" => 100,
-      "n_tup_del" => 0,
-      "n_tup_ins" => 0,
-      "n_tup_upd" => 0,
-      "name" => name,
-      "partition_of" => nil,
-      "partitioned" => false,
-      "relpages" => 1,
-      "reltuples" => 100.0,
-      "schema" => "public",
-      "seq_scan" => 0,
-      "total_bytes" => 8192
-    }
-    |> Map.merge(overrides)
+    Map.merge(
+      %{
+        "columns" => [column("id", %{"type" => "bigint"})],
+        "constraints" => [],
+        "heap_bytes" => 8192,
+        "idx_scan" => 0,
+        "indexes" => [],
+        "last_analyze" => nil,
+        "last_autoanalyze" => "2026-06-30T00:00:00Z",
+        "n_live_tup" => 100,
+        "n_tup_del" => 0,
+        "n_tup_ins" => 0,
+        "n_tup_upd" => 0,
+        "name" => name,
+        "partition_of" => nil,
+        "partitioned" => false,
+        "relpages" => 1,
+        "reltuples" => 100.0,
+        "schema" => "public",
+        "seq_scan" => 0,
+        "total_bytes" => 8192
+      },
+      overrides
+    )
   end
 
   def column(name, overrides \\ %{}) do
-    %{
-      "default" => nil,
-      "generated" => nil,
-      "identity" => false,
-      "name" => name,
-      "not_null" => false,
-      "type" => "bigint"
-    }
-    |> Map.merge(overrides)
+    Map.merge(
+      %{
+        "default" => nil,
+        "generated" => nil,
+        "identity" => false,
+        "name" => name,
+        "not_null" => false,
+        "type" => "bigint"
+      },
+      overrides
+    )
   end
 
   def index(name, keys, overrides \\ %{}) do
-    %{
-      "bytes" => 8192,
-      "keys" => Enum.map(keys, &%{"kind" => "column", "name" => &1}),
-      "method" => "btree",
-      "name" => name,
-      "partial" => false,
-      "primary" => false,
-      "unique" => false,
-      "valid" => true
-    }
-    |> Map.merge(overrides)
+    Map.merge(
+      %{
+        "bytes" => 8192,
+        "keys" => Enum.map(keys, &%{"kind" => "column", "name" => &1}),
+        "method" => "btree",
+        "name" => name,
+        "partial" => false,
+        "primary" => false,
+        "unique" => false,
+        "valid" => true
+      },
+      overrides
+    )
   end
 
   def fk(name, columns, ref_table, overrides \\ %{}) do
-    %{
-      "columns" => columns,
-      "is_not_null_check_on" => nil,
-      "name" => name,
-      "on_delete" => "no_action",
-      "on_update" => "no_action",
-      "references" => %{"columns" => ["id"], "table" => ref_table},
-      "type" => "foreign_key",
-      "validated" => true
-    }
-    |> Map.merge(overrides)
+    Map.merge(
+      %{
+        "columns" => columns,
+        "is_not_null_check_on" => nil,
+        "name" => name,
+        "on_delete" => "no_action",
+        "on_update" => "no_action",
+        "references" => %{"columns" => ["id"], "table" => ref_table},
+        "type" => "foreign_key",
+        "validated" => true
+      },
+      overrides
+    )
   end
 end

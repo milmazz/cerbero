@@ -1,12 +1,13 @@
 defmodule Cerbero.StalenessTest do
   use ExUnit.Case, async: true
 
-  alias Cerbero.Snapshot.Staleness
   import Cerbero.Test.SnapshotBuilder
+
+  alias Cerbero.Snapshot.Staleness
 
   defp assess(days_old) do
     snapshot = build_snapshot()
-    now = DateTime.add(snapshot.collected_at, days_old, :day)
+    now = DateTime.shift(snapshot.collected_at, day: days_old)
     {:ok, config} = Cerbero.Config.load("nonexistent")
     Staleness.assess(snapshot, now, config)
   end

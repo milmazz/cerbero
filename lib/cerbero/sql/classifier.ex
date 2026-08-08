@@ -66,25 +66,19 @@ defmodule Cerbero.SQL.Classifier do
   defp scan(<<>>, _state, current, stmts), do: [flush(current) | stmts]
 
   # -- quotes (only meaningful outside a comment/dollar-quote) -------------
-  defp scan(<<?', rest::binary>>, :normal, current, stmts),
-    do: scan(rest, :single_quote, [?' | current], stmts)
+  defp scan(<<?', rest::binary>>, :normal, current, stmts), do: scan(rest, :single_quote, [?' | current], stmts)
 
-  defp scan(<<?', rest::binary>>, :single_quote, current, stmts),
-    do: scan(rest, :normal, [?' | current], stmts)
+  defp scan(<<?', rest::binary>>, :single_quote, current, stmts), do: scan(rest, :normal, [?' | current], stmts)
 
-  defp scan(<<?", rest::binary>>, :normal, current, stmts),
-    do: scan(rest, :double_quote, [?" | current], stmts)
+  defp scan(<<?", rest::binary>>, :normal, current, stmts), do: scan(rest, :double_quote, [?" | current], stmts)
 
-  defp scan(<<?", rest::binary>>, :double_quote, current, stmts),
-    do: scan(rest, :normal, [?" | current], stmts)
+  defp scan(<<?", rest::binary>>, :double_quote, current, stmts), do: scan(rest, :normal, [?" | current], stmts)
 
   # -- statement separator (only meaningful outside quotes/comments) ------
-  defp scan(<<?;, rest::binary>>, :normal, current, stmts),
-    do: scan(rest, :normal, [], [flush(current) | stmts])
+  defp scan(<<?;, rest::binary>>, :normal, current, stmts), do: scan(rest, :normal, [], [flush(current) | stmts])
 
   # -- comment starts (only recognized in :normal) -------------------------
-  defp scan(<<?-, ?-, rest::binary>>, :normal, current, stmts),
-    do: scan(rest, :line_comment, [?\s | current], stmts)
+  defp scan(<<?-, ?-, rest::binary>>, :normal, current, stmts), do: scan(rest, :line_comment, [?\s | current], stmts)
 
   defp scan(<<?/, ?*, rest::binary>>, :normal, current, stmts),
     do: scan(rest, {:block_comment, 1}, [?\s | current], stmts)
@@ -114,21 +108,17 @@ defmodule Cerbero.SQL.Classifier do
   end
 
   # -- line comment body: discard until (not including) `\n`, or EOF -------
-  defp scan(<<?\n, _::binary>> = bin, :line_comment, current, stmts),
-    do: scan(bin, :normal, current, stmts)
+  defp scan(<<?\n, _::binary>> = bin, :line_comment, current, stmts), do: scan(bin, :normal, current, stmts)
 
-  defp scan(<<_c::utf8, rest::binary>>, :line_comment, current, stmts),
-    do: scan(rest, :line_comment, current, stmts)
+  defp scan(<<_c::utf8, rest::binary>>, :line_comment, current, stmts), do: scan(rest, :line_comment, current, stmts)
 
-  defp scan(<<_byte, rest::binary>>, :line_comment, current, stmts),
-    do: scan(rest, :line_comment, current, stmts)
+  defp scan(<<_byte, rest::binary>>, :line_comment, current, stmts), do: scan(rest, :line_comment, current, stmts)
 
   # -- block comment body: nesting is valid PG, so track depth -------------
   defp scan(<<?/, ?*, rest::binary>>, {:block_comment, depth}, current, stmts),
     do: scan(rest, {:block_comment, depth + 1}, current, stmts)
 
-  defp scan(<<?*, ?/, rest::binary>>, {:block_comment, 1}, current, stmts),
-    do: scan(rest, :normal, current, stmts)
+  defp scan(<<?*, ?/, rest::binary>>, {:block_comment, 1}, current, stmts), do: scan(rest, :normal, current, stmts)
 
   defp scan(<<?*, ?/, rest::binary>>, {:block_comment, depth}, current, stmts),
     do: scan(rest, {:block_comment, depth - 1}, current, stmts)
@@ -136,19 +126,16 @@ defmodule Cerbero.SQL.Classifier do
   defp scan(<<_c::utf8, rest::binary>>, {:block_comment, _} = state, current, stmts),
     do: scan(rest, state, current, stmts)
 
-  defp scan(<<_byte, rest::binary>>, {:block_comment, _} = state, current, stmts),
-    do: scan(rest, state, current, stmts)
+  defp scan(<<_byte, rest::binary>>, {:block_comment, _} = state, current, stmts), do: scan(rest, state, current, stmts)
 
   # -- generic character: append and stay in state (:normal / :single_quote
   # / :double_quote at this point) -----------------------------------------
-  defp scan(<<c::utf8, rest::binary>>, state, current, stmts),
-    do: scan(rest, state, [<<c::utf8>> | current], stmts)
+  defp scan(<<c::utf8, rest::binary>>, state, current, stmts), do: scan(rest, state, [<<c::utf8>> | current], stmts)
 
   # -- invalid/truncated UTF-8 fallback: consume one raw byte and keep
   # going rather than crash. classify_statement/1 rejects the resulting
   # statement as :unknown if it isn't valid UTF-8 in the end. -------------
-  defp scan(<<byte, rest::binary>>, state, current, stmts),
-    do: scan(rest, state, [<<byte>> | current], stmts)
+  defp scan(<<byte, rest::binary>>, state, current, stmts), do: scan(rest, state, [<<byte>> | current], stmts)
 
   defp flush(current), do: current |> Enum.reverse() |> IO.iodata_to_binary()
 

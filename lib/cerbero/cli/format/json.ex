@@ -8,7 +8,7 @@ defmodule Cerbero.CLI.Format.JSON do
 
   @spec render([Finding.t()], map()) :: String.t()
   def render(findings, summary) do
-    %{
+    Canonical.encode(%{
       "cerbero_findings_version" => @findings_version,
       "findings" =>
         findings
@@ -25,7 +25,6 @@ defmodule Cerbero.CLI.Format.JSON do
           }
         end),
       "summary" => summary
-    }
-    |> Canonical.encode()
+    })
   end
 end

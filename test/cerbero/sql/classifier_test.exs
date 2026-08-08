@@ -37,9 +37,7 @@ defmodule Cerbero.SQL.ClassifierTest do
              constraint: "org_id_not_null",
              not_valid: true
            } =
-             one(
-               "ALTER TABLE events ADD CONSTRAINT org_id_not_null CHECK (org_id IS NOT NULL) NOT VALID"
-             )
+             one("ALTER TABLE events ADD CONSTRAINT org_id_not_null CHECK (org_id IS NOT NULL) NOT VALID")
 
     assert %Classified{
              class: :validate_constraint,
@@ -71,9 +69,7 @@ defmodule Cerbero.SQL.ClassifierTest do
              one("ALTER TABLE t ADD CONSTRAINT positive CHECK (price > 0)")
 
     assert %Classified{class: :add_foreign_key, table: "events", not_valid: true} =
-             one(
-               "ALTER TABLE events ADD CONSTRAINT fk FOREIGN KEY (org_id) REFERENCES orgs (id) NOT VALID"
-             )
+             one("ALTER TABLE events ADD CONSTRAINT fk FOREIGN KEY (org_id) REFERENCES orgs (id) NOT VALID")
 
     assert %Classified{class: :alter_column_type, table: "events", column: "id"} =
              one("ALTER TABLE events ALTER COLUMN id TYPE bigint")
@@ -152,9 +148,7 @@ defmodule Cerbero.SQL.ClassifierTest do
              %Classified{class: :update, table: "events"},
              %Classified{class: :delete, table: "events"}
            ] =
-             Classifier.classify(
-               "UPDATE events SET note = '--x' WHERE id = 1; DELETE FROM events WHERE id = 2;"
-             )
+             Classifier.classify("UPDATE events SET note = '--x' WHERE id = 1; DELETE FROM events WHERE id = 2;")
 
     # Same for `/*` inside a string literal — must not be treated as a
     # block comment start.
