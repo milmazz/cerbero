@@ -380,7 +380,7 @@ defmodule Cerbero.CLI.CheckTest do
                &(&1["severity"] == "info" and &1["message"] =~ "skipped via config")
              )
 
-      assert Enum.all?(findings, &(&1["metadata"]["skipped"] == %{"via" => "config"}))
+      assert Enum.all?(findings, &(&1["metadata"]["skipped"] == %{"via" => ["config"]}))
     end
   end
 

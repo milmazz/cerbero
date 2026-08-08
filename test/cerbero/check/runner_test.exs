@@ -153,7 +153,7 @@ defmodule Cerbero.Check.RunnerTest do
     assert msg =~ "reviewed by DBA 2026-08-01"
 
     assert metadata.skipped == %{
-             via: :migration_attribute,
+             via: [:migration_attribute],
              reason: "reviewed by DBA 2026-08-01"
            }
   end
@@ -295,7 +295,36 @@ defmodule Cerbero.Check.RunnerTest do
              Enum.filter(findings, &(&1.check == :unclassified_sql))
 
     assert msg =~ "(skipped via config)"
-    assert metadata.skipped == %{via: :config}
+    assert metadata.skipped == %{via: [:config]}
+  end
+
+  test "double-skip (@cerbero_skip + config) preserves both provenances and the reason",
+       %{config: config} do
+    config = %{config | skip_checks: [:meta_findings]}
+
+    {:ok, m} =
+      Parser.parse_string("""
+      defmodule M do
+        use Ecto.Migration
+        @cerbero_skip [{:unclassified_sql, "reviewed by DBA 2026-08-01"}]
+        def change do
+          execute "CLUSTER events USING idx"
+        end
+      end
+      """)
+
+    {findings, _} = Runner.run([m], catalog([table("events")]), config)
+
+    assert [%Finding{severity: :info, message: msg, metadata: metadata}] =
+             Enum.filter(findings, &(&1.check == :unclassified_sql))
+
+    assert msg =~ "(skipped: reviewed by DBA 2026-08-01)"
+    assert msg =~ "(skipped via config)"
+
+    assert metadata.skipped == %{
+             via: [:migration_attribute, :config],
+             reason: "reviewed by DBA 2026-08-01"
+           }
   end
 
   test "@cerbero_skip wins over severity_overrides, but overrides apply to other migrations",

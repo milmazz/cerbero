@@ -16,6 +16,11 @@ defmodule Cerbero.Check do
   configured check modules and feeds them to formatters that carry a rule
   catalog (SARIF `shortDescription`). A check without `description/0` still
   works everywhere — its id stands in for the description.
+
+  Findings returned from `run/3` may carry `metadata` — it is serialized
+  verbatim into JSON output, so values must be JSON-encodable and some keys
+  are reserved for the runner's machinery. See the contract on
+  `Cerbero.Finding`.
   """
 
   @callback id() :: atom()

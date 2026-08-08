@@ -111,7 +111,7 @@ defmodule Cerbero.Check.Runner do
           finding
           | severity: :info,
             message: finding.message <> " (skipped: #{reason})",
-            metadata: Map.put(finding.metadata, :skipped, %{via: :migration_attribute, reason: reason})
+            metadata: record_skip(finding.metadata, :migration_attribute, %{reason: reason})
         }
 
       nil ->
@@ -125,11 +125,21 @@ defmodule Cerbero.Check.Runner do
         finding
         | severity: :info,
           message: finding.message <> " (skipped via config)",
-          metadata: Map.put(finding.metadata, :skipped, %{via: :config})
+          metadata: record_skip(finding.metadata, :config, %{})
       }
     else
       finding
     end
+  end
+
+  # A finding can be skipped through both routes at once; `via` is a list in
+  # application order so a second route never clobbers the first's provenance
+  # or reason (the post-merge audit caught apply_config_skip overwriting
+  # apply_skip's record while the message honestly kept both suffixes).
+  defp record_skip(metadata, via, extra) do
+    Map.update(metadata, :skipped, Map.put(extra, :via, [via]), fn prev ->
+      prev |> Map.merge(extra) |> Map.update!(:via, &(&1 ++ [via]))
+    end)
   end
 
   # `lock_timeout_attested: true` is the team affirming their migration
