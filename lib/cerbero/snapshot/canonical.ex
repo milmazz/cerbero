@@ -15,10 +15,9 @@ defmodule Cerbero.Snapshot.Canonical do
     inner =
       map
       |> Enum.sort_by(fn {k, _v} -> to_string(k) end)
-      |> Enum.map(fn {k, v} ->
+      |> Enum.map_intersperse(",\n", fn {k, v} ->
         [pad(depth + 1), JSON.encode!(to_string(k)), ": ", do_encode(v, depth + 1)]
       end)
-      |> Enum.intersperse(",\n")
 
     ["{\n", inner, "\n", pad(depth), "}"]
   end
@@ -27,9 +26,7 @@ defmodule Cerbero.Snapshot.Canonical do
 
   defp do_encode(list, depth) when is_list(list) do
     inner =
-      list
-      |> Enum.map(fn v -> [pad(depth + 1), do_encode(v, depth + 1)] end)
-      |> Enum.intersperse(",\n")
+      Enum.map_intersperse(list, ",\n", fn v -> [pad(depth + 1), do_encode(v, depth + 1)] end)
 
     ["[\n", inner, "\n", pad(depth), "]"]
   end

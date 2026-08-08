@@ -1,9 +1,11 @@
 defmodule Cerbero.CatalogTest do
   use ExUnit.Case, async: true
 
-  alias Cerbero.{Catalog, Config}
-  alias Cerbero.Snapshot.Staleness
   import Cerbero.Test.SnapshotBuilder
+
+  alias Cerbero.Catalog
+  alias Cerbero.Config
+  alias Cerbero.Snapshot.Staleness
 
   defp catalog(tables, snapshot_overrides \\ %{}, staleness_overrides \\ []) do
     snapshot = build_snapshot(Map.merge(%{"tables" => tables}, snapshot_overrides))

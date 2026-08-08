@@ -1,4 +1,5 @@
 defmodule Cerbero.Check.RunnerTest.EchoCheck do
+  @moduledoc false
   @behaviour Cerbero.Check
 
   @impl true
@@ -20,10 +21,17 @@ end
 defmodule Cerbero.Check.RunnerTest do
   use ExUnit.Case, async: true
 
-  alias Cerbero.{Catalog, Config, Finding, Migration}
-  alias Cerbero.Check.{Helpers, Runner}
-  alias Cerbero.Migration.Parser
   import Cerbero.Test.SnapshotBuilder
+
+  alias Cerbero.Catalog
+  alias Cerbero.Check.Helpers
+  alias Cerbero.Check.NotNullOnPopulatedTable
+  alias Cerbero.Check.Runner
+  alias Cerbero.Check.RunnerTest.EchoCheck
+  alias Cerbero.Config
+  alias Cerbero.Finding
+  alias Cerbero.Migration
+  alias Cerbero.Migration.Parser
 
   defp parse!(version, body) do
     {:ok, m} =
@@ -126,7 +134,7 @@ defmodule Cerbero.Check.RunnerTest do
       })
 
     {findings_off, _} =
-      Runner.run([m], catalog([events]), config, [Cerbero.Check.NotNullOnPopulatedTable])
+      Runner.run([m], catalog([events]), config, [NotNullOnPopulatedTable])
 
     assert [%Finding{severity: :error, message: msg_off}] = findings_off
     refute msg_off =~ "lock_timeout attested"
@@ -134,7 +142,7 @@ defmodule Cerbero.Check.RunnerTest do
     config_on = %{config | lock_timeout_attested: true}
 
     {findings_on, _} =
-      Runner.run([m], catalog([events]), config_on, [Cerbero.Check.NotNullOnPopulatedTable])
+      Runner.run([m], catalog([events]), config_on, [NotNullOnPopulatedTable])
 
     assert [%Finding{severity: :error, message: msg_on}] = findings_on
     assert msg_on == msg_off <> " (lock_timeout attested in .cerbero.exs)"
@@ -152,7 +160,7 @@ defmodule Cerbero.Check.RunnerTest do
   end
 
   test "extra_checks from config run alongside the default checks", %{config: config} do
-    config = %{config | extra_checks: [Cerbero.Check.RunnerTest.EchoCheck]}
+    config = %{config | extra_checks: [EchoCheck]}
     m = parse!("20260801000000", "create table(:events_v2) do\n add :x, :bigint\n end")
 
     {findings, _} = Runner.run([m], catalog(), config)
@@ -165,7 +173,7 @@ defmodule Cerbero.Check.RunnerTest do
   } do
     config = %{
       config
-      | extra_checks: [Cerbero.Check.RunnerTest.EchoCheck],
+      | extra_checks: [EchoCheck],
         skip_checks: [:echo_check]
     }
 

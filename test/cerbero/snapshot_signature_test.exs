@@ -1,12 +1,14 @@
 defmodule Cerbero.SnapshotSignatureTest do
   use ExUnit.Case, async: true
 
-  alias Cerbero.Snapshot
-  alias Cerbero.Snapshot.{Canonical, Signature}
   import Cerbero.Test.SnapshotBuilder
 
+  alias Cerbero.Snapshot
+  alias Cerbero.Snapshot.Canonical
+  alias Cerbero.Snapshot.Signature
+
   defp write_signed(tmp_dir, seed_b64) do
-    signed = build() |> Signature.sign(seed_b64)
+    signed = Signature.sign(build(), seed_b64)
     path = Path.join(tmp_dir, "signed.json")
     Snapshot.write!(signed, path)
     path
@@ -34,7 +36,7 @@ defmodule Cerbero.SnapshotSignatureTest do
     tmp_dir: tmp_dir
   } do
     {pub, seed} = Signature.generate()
-    signed = build() |> Signature.sign(seed)
+    signed = Signature.sign(build(), seed)
 
     tampered = signed |> Map.put("database", "prod_evil") |> Snapshot.stamp()
     path = Path.join(tmp_dir, "tampered.json")
@@ -69,7 +71,7 @@ defmodule Cerbero.SnapshotSignatureTest do
     tmp_dir: tmp_dir
   } do
     {_pub, seed} = Signature.generate()
-    signed = build() |> Signature.sign(seed)
+    signed = Signature.sign(build(), seed)
     corrupted = put_in(signed["signature"]["value"], Base.encode64(:crypto.strong_rand_bytes(64)))
 
     path = Path.join(tmp_dir, "corrupted.json")

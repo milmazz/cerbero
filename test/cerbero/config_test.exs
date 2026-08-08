@@ -1,4 +1,5 @@
 defmodule Cerbero.ConfigTest.NoopCheck do
+  @moduledoc false
   @behaviour Cerbero.Check
 
   @impl true

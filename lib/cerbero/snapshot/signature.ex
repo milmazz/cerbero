@@ -85,8 +85,7 @@ defmodule Cerbero.Snapshot.Signature do
     end
   end
 
-  defp check_valid(_checksum, _value, _pub),
-    do: {:error, {:signature_invalid, "no checksum to verify against"}}
+  defp check_valid(_checksum, _value, _pub), do: {:error, {:signature_invalid, "no checksum to verify against"}}
 
   defp check_trusted(_pub_b64, []), do: :ok
 

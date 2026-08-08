@@ -60,11 +60,9 @@ defmodule Cerbero.Snapshot.Exporter.Queries do
   def current_database, do: "SELECT current_database()"
   def standby, do: "SELECT pg_is_in_recovery()"
 
-  def stats_reset,
-    do: "SELECT stats_reset FROM pg_stat_database WHERE datname = current_database()"
+  def stats_reset, do: "SELECT stats_reset FROM pg_stat_database WHERE datname = current_database()"
 
-  def crdb_probe,
-    do: "SELECT count(*) FROM information_schema.schemata WHERE schema_name = 'crdb_internal'"
+  def crdb_probe, do: "SELECT count(*) FROM information_schema.schemata WHERE schema_name = 'crdb_internal'"
 
   # sole non-catalog read; identifier is quote_ident-ed in code
   def applied_migrations(quoted_table), do: "SELECT version::text FROM #{quoted_table} ORDER BY 1"
@@ -208,8 +206,7 @@ defmodule Cerbero.Snapshot.Exporter.Queries do
   # CRDB alternates (sizes/rows via crdb_internal; PG functions are unreliable there)
   def crdb_version, do: "SELECT value FROM crdb_internal.node_build_info WHERE field = 'Version'"
 
-  def crdb_row_counts,
-    do: "SELECT table_name, estimated_row_count FROM crdb_internal.table_row_statistics"
+  def crdb_row_counts, do: "SELECT table_name, estimated_row_count FROM crdb_internal.table_row_statistics"
 
   # CRDB's analyze-timestamp equivalent (roadmap item 10): statistics
   # creation times from system.table_statistics (what SHOW STATISTICS FOR

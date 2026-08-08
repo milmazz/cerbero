@@ -104,7 +104,7 @@ defmodule Cerbero.SnapshotTest do
 
       # Extract all keys from the JSON output using a regex to find "key": pattern
       key_pattern = ~r/"(k\d{2})"/
-      encoded_keys = Regex.scan(key_pattern, encoded) |> Enum.map(&Enum.at(&1, 1))
+      encoded_keys = key_pattern |> Regex.scan(encoded) |> Enum.map(&Enum.at(&1, 1))
 
       # Verify keys appear in lexicographic order in the output
       sorted_keys = Enum.sort(encoded_keys)
@@ -116,19 +116,19 @@ defmodule Cerbero.SnapshotTest do
     # Pre-release collapse: precision and signature are part of the v1
     # baseline — there are no published readers of older formats to protect.
     test "the current format version is 1" do
-      assert Cerbero.Snapshot.format_version() == 1
+      assert Snapshot.format_version() == 1
     end
 
     defp reload_with(tmp_dir, fun) do
       raw = "test/fixtures/snapshots/huge_table.json" |> File.read!() |> JSON.decode!()
       path = Path.join(tmp_dir, "versioned.json")
-      Cerbero.Snapshot.write!(fun.(raw), path)
-      Cerbero.Snapshot.load(path)
+      Snapshot.write!(fun.(raw), path)
+      Snapshot.load(path)
     end
 
     @tag :tmp_dir
     test "refuses a newer format_version, telling the user to upgrade", %{tmp_dir: tmp_dir} do
-      too_new = Cerbero.Snapshot.format_version() + 1
+      too_new = Snapshot.format_version() + 1
 
       assert {:error, {:format_too_new, ^too_new, "upgrade cerbero"}} =
                reload_with(tmp_dir, &Map.put(&1, "format_version", too_new))
@@ -136,7 +136,7 @@ defmodule Cerbero.SnapshotTest do
 
     @tag :tmp_dir
     test "still accepts the v1 format (no precision field)", %{tmp_dir: tmp_dir} do
-      assert {:ok, %Cerbero.Snapshot{format_version: 1, precision: :exact}} =
+      assert {:ok, %Snapshot{format_version: 1, precision: :exact}} =
                reload_with(tmp_dir, & &1)
     end
 
@@ -152,19 +152,19 @@ defmodule Cerbero.SnapshotTest do
   describe "precision field" do
     test "decodes precision as a closed enum, defaulting to :exact when absent" do
       raw = SnapshotBuilder.build(%{})
-      assert {:ok, %Cerbero.Snapshot{precision: :exact}} = Cerbero.Snapshot.decode(raw)
+      assert {:ok, %Snapshot{precision: :exact}} = Snapshot.decode(raw)
 
       bucketed =
         SnapshotBuilder.build(%{"precision" => "order_of_magnitude"})
 
-      assert {:ok, %Cerbero.Snapshot{precision: :order_of_magnitude}} =
-               Cerbero.Snapshot.decode(bucketed)
+      assert {:ok, %Snapshot{precision: :order_of_magnitude}} =
+               Snapshot.decode(bucketed)
     end
 
     test "rejects out-of-enum precision values" do
       raw = SnapshotBuilder.build(%{"precision" => "fuzzy"})
 
-      assert {:error, {:invalid_value, "$.precision", "fuzzy"}} = Cerbero.Snapshot.decode(raw)
+      assert {:error, {:invalid_value, "$.precision", "fuzzy"}} = Snapshot.decode(raw)
     end
   end
 end

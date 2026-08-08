@@ -211,14 +211,7 @@ defmodule Cerbero.Snapshot.Exporter do
     end
   end
 
-  defp assemble_tables(
-         tables,
-         columns,
-         indexes,
-         constraints,
-         crdb_row_counts,
-         crdb_stats_times
-       ) do
+  defp assemble_tables(tables, columns, indexes, constraints, crdb_row_counts, crdb_stats_times) do
     col_by = Enum.group_by(columns, fn [schema, table | _] -> {schema, table} end)
     idx_by = Enum.group_by(indexes, fn [schema, table | _] -> {schema, table} end)
     con_by = Enum.group_by(constraints, fn [schema, table | _] -> {schema, table} end)
@@ -263,8 +256,7 @@ defmodule Cerbero.Snapshot.Exporter do
         # NULL, so fall back to statistics creation times (manual -> analyze,
         # '__auto__' -> autoanalyze). nil stays nil on both engines.
         "last_analyze" => iso(last_analyze || crdb_stat_time(crdb_stats_times, schema, name, 0)),
-        "last_autoanalyze" =>
-          iso(last_autoanalyze || crdb_stat_time(crdb_stats_times, schema, name, 1)),
+        "last_autoanalyze" => iso(last_autoanalyze || crdb_stat_time(crdb_stats_times, schema, name, 1)),
         "seq_scan" => seq_scan || 0,
         "idx_scan" => idx_scan || 0,
         "n_tup_ins" => n_tup_ins || 0,
@@ -279,17 +271,7 @@ defmodule Cerbero.Snapshot.Exporter do
     end)
   end
 
-  defp column_json([
-         _s,
-         _t,
-         name,
-         type,
-         not_null,
-         identity,
-         generated_stored,
-         has_default,
-         default_kind
-       ]) do
+  defp column_json([_s, _t, name, type, not_null, identity, generated_stored, has_default, default_kind]) do
     %{
       "name" => name,
       "type" => type,
@@ -332,19 +314,7 @@ defmodule Cerbero.Snapshot.Exporter do
     }
   end
 
-  defp constraint_json([
-         _s,
-         _t,
-         name,
-         type,
-         columns,
-         validated,
-         ref_table,
-         ref_columns,
-         on_delete,
-         on_update,
-         is_nn
-       ]) do
+  defp constraint_json([_s, _t, name, type, columns, validated, ref_table, ref_columns, on_delete, on_update, is_nn]) do
     %{
       "name" => name,
       "type" => type,
@@ -385,7 +355,8 @@ defmodule Cerbero.Snapshot.Exporter do
   """
   @spec emit_sql(String.t()) :: String.t()
   def emit_sql(engine \\ "postgres") do
-    Queries.emit_list(engine)
+    engine
+    |> Queries.emit_list()
     |> Enum.map_join("\n", fn {name, sql} ->
       one_line = sql |> String.trim() |> String.trim_trailing(";")
 
@@ -473,18 +444,15 @@ defmodule Cerbero.Snapshot.Exporter do
       end
 
     crdb_row_counts =
-      (sections["crdb_row_counts"] || [])
-      |> Map.new(fn m ->
+      Map.new(sections["crdb_row_counts"] || [], fn m ->
         # Same 0-means-no-signal mapping as the live path (see
         # crdb_row_counts/2): never forward a fabricated zero.
         {m["table_name"], zero_row_count_to_nil(m["estimated_row_count"])}
       end)
 
     crdb_stats_times =
-      (sections["crdb_stats_times"] || [])
-      |> Map.new(fn m ->
-        {{m["schema_name"], m["name"]},
-         {parse_ts(m["manual_created"]), parse_ts(m["auto_created"])}}
+      Map.new(sections["crdb_stats_times"] || [], fn m ->
+        {{m["schema_name"], m["name"]}, {parse_ts(m["manual_created"]), parse_ts(m["auto_created"])}}
       end)
 
     tables = Enum.map(sections["tables"] || [], &table_row/1)

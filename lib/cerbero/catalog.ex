@@ -8,8 +8,13 @@ defmodule Cerbero.Catalog do
 
   import Kernel, except: [apply: 2]
 
-  alias Cerbero.{Config, Snapshot}
-  alias Cerbero.Snapshot.{Staleness, Table}
+  alias Cerbero.Config
+  alias Cerbero.Migration
+  alias Cerbero.Operation, as: Op
+  alias Cerbero.Snapshot
+  alias Cerbero.Snapshot.Staleness
+  alias Cerbero.Snapshot.Table
+  alias Cerbero.SQL.Classifier.Classified
 
   defstruct engine: :postgres,
             version_num: 150_000,
@@ -186,10 +191,6 @@ defmodule Cerbero.Catalog do
     end
   end
 
-  alias Cerbero.Migration
-  alias Cerbero.Operation, as: Op
-  alias Cerbero.SQL.Classifier.Classified
-
   @spec apply_migration(t(), Migration.t()) :: t()
   def apply_migration(cat, %Migration{operations: ops}), do: Enum.reduce(ops, cat, &apply(&2, &1))
 
@@ -246,17 +247,14 @@ defmodule Cerbero.Catalog do
     update_table(cat, name, fn t -> %{t | constraints: t.constraints ++ [con]} end)
   end
 
-  def apply(cat, %Op.RawSQL{classified: classified}),
-    do: Enum.reduce(classified, cat, &apply_sql(&2, &1))
+  def apply(cat, %Op.RawSQL{classified: classified}), do: Enum.reduce(classified, cat, &apply_sql(&2, &1))
 
   def apply(cat, %Op.RenameOp{}), do: cat
   def apply(cat, %Op.Unknown{}), do: cat
 
-  defp apply_sql(cat, %Classified{class: :create_table, table: name}),
-    do: born_table(cat, name, [])
+  defp apply_sql(cat, %Classified{class: :create_table, table: name}), do: born_table(cat, name, [])
 
-  defp apply_sql(cat, %Classified{class: :drop_table, table: name}),
-    do: apply(cat, %Op.DropTable{table: name})
+  defp apply_sql(cat, %Classified{class: :drop_table, table: name}), do: apply(cat, %Op.DropTable{table: name})
 
   defp apply_sql(cat, %Classified{
          class: :add_check_is_not_null,
@@ -358,8 +356,7 @@ defmodule Cerbero.Catalog do
     }
   end
 
-  defp apply_alter({:remove_column, name}, t),
-    do: %{t | columns: Enum.reject(t.columns, &(&1.name == name))}
+  defp apply_alter({:remove_column, name}, t), do: %{t | columns: Enum.reject(t.columns, &(&1.name == name))}
 
   defp apply_alter(_other, t), do: t
 
@@ -367,7 +364,7 @@ defmodule Cerbero.Catalog do
     qname = qualify(name)
     [schema, bare] = String.split(qname, ".", parts: 2)
 
-    t = %Snapshot.Table{
+    t = %Table{
       schema: schema,
       name: bare,
       partitioned: false,

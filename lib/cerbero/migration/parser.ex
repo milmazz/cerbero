@@ -75,8 +75,7 @@ defmodule Cerbero.Migration.Parser do
     end
   end
 
-  defp find_module({:defmodule, _, [alias_ast, [do: body]]}),
-    do: {Macro.to_string(alias_ast), body}
+  defp find_module({:defmodule, _, [alias_ast, [do: body]]}), do: {Macro.to_string(alias_ast), body}
 
   # A file may define helper modules ahead of the actual migration module
   # (e.g. a shared fixture/support module). Prefer whichever top-level
@@ -187,13 +186,11 @@ defmodule Cerbero.Migration.Parser do
 
   # --- create/drop/alter/execute -------------------------------------------
 
-  defp op({verb, meta, [{:table, _, [name | _]}, [do: table_body]]})
-       when verb in [:create, :create_if_not_exists] do
+  defp op({verb, meta, [{:table, _, [name | _]}, [do: table_body]]}) when verb in [:create, :create_if_not_exists] do
     %Op.CreateTable{table: name(name), line: meta[:line], columns: columns(table_body)}
   end
 
-  defp op({verb, meta, [{:table, _, [name | _]}]})
-       when verb in [:create, :create_if_not_exists] do
+  defp op({verb, meta, [{:table, _, [name | _]}]}) when verb in [:create, :create_if_not_exists] do
     %Op.CreateTable{table: name(name), line: meta[:line], columns: []}
   end
 
@@ -216,8 +213,7 @@ defmodule Cerbero.Migration.Parser do
     end
   end
 
-  defp op({verb, meta, [{:constraint, _, [table, cname | rest]}]})
-       when verb in [:create, :create_if_not_exists] do
+  defp op({verb, meta, [{:constraint, _, [table, cname | rest]}]}) when verb in [:create, :create_if_not_exists] do
     opts = List.first(rest) || []
 
     %Op.CreateConstraint{
@@ -276,7 +272,7 @@ defmodule Cerbero.Migration.Parser do
 
   defp op(node) do
     meta = if is_tuple(node) and tuple_size(node) == 3, do: elem(node, 1), else: []
-    unknown(meta, Macro.to_string(node) |> String.slice(0, 80))
+    unknown(meta, node |> Macro.to_string() |> String.slice(0, 80))
   end
 
   defp unknown(meta, description) do
@@ -322,8 +318,7 @@ defmodule Cerbero.Migration.Parser do
     end)
   end
 
-  defp type_of({:references, _, [table | rest]}),
-    do: {:references, name(table), keyword_opts(List.first(rest) || [])}
+  defp type_of({:references, _, [table | rest]}), do: {:references, name(table), keyword_opts(List.first(rest) || [])}
 
   defp type_of(type) when is_atom(type), do: type
   defp type_of({:__aliases__, _, _} = t), do: Macro.to_string(t)

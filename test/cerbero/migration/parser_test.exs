@@ -3,16 +3,13 @@ defmodule Cerbero.Migration.ParserTest do
 
   alias Cerbero.Migration
   alias Cerbero.Migration.Parser
-
-  alias Cerbero.Operation.{
-    AlterTable,
-    CreateConstraint,
-    CreateIndex,
-    CreateTable,
-    DropIndex,
-    RawSQL,
-    Unknown
-  }
+  alias Cerbero.Operation.AlterTable
+  alias Cerbero.Operation.CreateConstraint
+  alias Cerbero.Operation.CreateIndex
+  alias Cerbero.Operation.CreateTable
+  alias Cerbero.Operation.DropIndex
+  alias Cerbero.Operation.RawSQL
+  alias Cerbero.Operation.Unknown
 
   defp ops!(source) do
     {:ok, %Migration{operations: ops}} = Parser.parse_string(source)
@@ -21,9 +18,7 @@ defmodule Cerbero.Migration.ParserTest do
 
   test "parses the committed corpus fixtures with versions and attributes" do
     {:ok, unsafe} =
-      Parser.parse_file(
-        "test/fixtures/migrations/unsafe/20260801000000_add_events_payload_index.exs"
-      )
+      Parser.parse_file("test/fixtures/migrations/unsafe/20260801000000_add_events_payload_index.exs")
 
     assert unsafe.version == "20260801000000"
     assert unsafe.attrs.disable_ddl_transaction == false
@@ -39,9 +34,7 @@ defmodule Cerbero.Migration.ParserTest do
              unsafe.operations
 
     {:ok, safe} =
-      Parser.parse_file(
-        "test/fixtures/migrations/safe/20260801000001_add_events_payload_index_concurrently.exs"
-      )
+      Parser.parse_file("test/fixtures/migrations/safe/20260801000001_add_events_payload_index_concurrently.exs")
 
     assert safe.attrs.disable_ddl_transaction and safe.attrs.disable_migration_lock
     assert [%CreateIndex{concurrently: true}] = safe.operations

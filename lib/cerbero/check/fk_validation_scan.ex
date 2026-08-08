@@ -2,9 +2,11 @@ defmodule Cerbero.Check.FKValidationScan do
   @moduledoc "Rule 5: ADD FK scans the referencing table while blocking writes on BOTH tables."
   @behaviour Cerbero.Check
 
-  alias Cerbero.{Catalog, Finding, Severity}
+  alias Cerbero.Catalog
   alias Cerbero.Check.Helpers
   alias Cerbero.DDL.Effects
+  alias Cerbero.Finding
+  alias Cerbero.Severity
 
   @impl true
   def id, do: :fk_validation_scan

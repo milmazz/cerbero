@@ -2,9 +2,10 @@ defmodule Cerbero.Check.NotNullOnPopulatedTable do
   @moduledoc "Rule 2: SET NOT NULL scans under AEL unless a validated IS NOT NULL CHECK exists (PG >= 12)."
   @behaviour Cerbero.Check
 
-  alias Cerbero.{Catalog, Severity}
+  alias Cerbero.Catalog
   alias Cerbero.Check.Helpers
   alias Cerbero.Operation, as: Op
+  alias Cerbero.Severity
   alias Cerbero.SQL.Classifier.Classified
 
   @impl true

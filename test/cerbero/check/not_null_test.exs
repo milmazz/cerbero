@@ -3,14 +3,13 @@ defmodule Cerbero.Check.NotNullTest do
 
   alias Cerbero.Check.NotNullOnPopulatedTable
 
-  defp judge_rule(tables, body, opts \\ []),
-    do: judge([NotNullOnPopulatedTable], tables, body, opts)
+  defp judge_rule(tables, body, opts \\ []), do: judge([NotNullOnPopulatedTable], tables, body, opts)
 
   test "SET NOT NULL on a populated table without a proving CHECK: severity by rows, two-step spelled out" do
     assert [%Finding{check: :not_null_on_populated_table, severity: :error, message: msg}] =
              judge_rule(
                [big_events_table()],
-               "modify :org_id, :bigint, null: false" |> in_alter("events")
+               in_alter("modify :org_id, :bigint, null: false", "events")
              )
 
     assert msg =~ "full-table scan under ACCESS EXCLUSIVE"
@@ -26,7 +25,7 @@ defmodule Cerbero.Check.NotNullTest do
         "reltuples" => 5_000_000.0
       })
 
-    assert [] = judge_rule([t], "modify :org_id, :bigint, null: false" |> in_alter("events"))
+    assert [] = judge_rule([t], in_alter("modify :org_id, :bigint, null: false", "events"))
   end
 
   test "PG >= 12 with a validated IS NOT NULL check (snapshot): metadata-only info note" do
@@ -50,7 +49,7 @@ defmodule Cerbero.Check.NotNullTest do
       })
 
     assert [%Finding{severity: :info, message: msg}] =
-             judge_rule([t], "modify :org_id, :bigint, null: false" |> in_alter("events"))
+             judge_rule([t], in_alter("modify :org_id, :bigint, null: false", "events"))
 
     assert msg =~ "scan is skipped"
   end
@@ -74,7 +73,7 @@ defmodule Cerbero.Check.NotNullTest do
     assert [%Finding{severity: :warning, message: msg}] =
              judge_rule(
                [big_events_table()],
-               "modify :org_id, :bigint, null: false" |> in_alter("events"),
+               in_alter("modify :org_id, :bigint, null: false", "events"),
                snapshot: crdb
              )
 
@@ -89,7 +88,7 @@ defmodule Cerbero.Check.NotNullTest do
     assert [] =
              judge_rule(
                [small],
-               "modify :org_id, :bigint, null: false" |> in_alter("events"),
+               in_alter("modify :org_id, :bigint, null: false", "events"),
                snapshot: crdb
              )
   end

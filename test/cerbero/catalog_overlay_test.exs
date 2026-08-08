@@ -1,9 +1,10 @@
 defmodule Cerbero.CatalogOverlayTest do
   use ExUnit.Case, async: true
 
+  import Cerbero.Test.SnapshotBuilder
+
   alias Cerbero.Catalog
   alias Cerbero.Migration.Parser
-  import Cerbero.Test.SnapshotBuilder
 
   defp base_catalog(tables \\ []) do
     snapshot = build_snapshot(%{"tables" => tables})
@@ -19,9 +20,7 @@ defmodule Cerbero.CatalogOverlayTest do
 
   defp apply_source(cat, body) do
     {:ok, m} =
-      Parser.parse_string(
-        "defmodule M do\n use Ecto.Migration\n def change do\n #{body}\n end\nend"
-      )
+      Parser.parse_string("defmodule M do\n use Ecto.Migration\n def change do\n #{body}\n end\nend")
 
     Catalog.apply_migration(cat, m)
   end
@@ -52,7 +51,8 @@ defmodule Cerbero.CatalogOverlayTest do
 
   test "DSL-created index becomes visible (rule 6 consumes this)" do
     cat =
-      base_catalog([table("events")])
+      [table("events")]
+      |> base_catalog()
       |> apply_source("create index(:events, [:org_id])")
 
     assert Catalog.has_index_leading_on?(cat, "events", "org_id")
@@ -60,10 +60,9 @@ defmodule Cerbero.CatalogOverlayTest do
 
   test "the raw-SQL NOT NULL two-step is recognized: NOT VALID check + VALIDATE" do
     cat =
-      base_catalog([table("events", %{"columns" => [column("org_id")]})])
-      |> apply_source(
-        ~s|execute "ALTER TABLE events ADD CONSTRAINT org_id_nn CHECK (org_id IS NOT NULL) NOT VALID"|
-      )
+      [table("events", %{"columns" => [column("org_id")]})]
+      |> base_catalog()
+      |> apply_source(~s|execute "ALTER TABLE events ADD CONSTRAINT org_id_nn CHECK (org_id IS NOT NULL) NOT VALID"|)
 
     refute Catalog.validated_not_null_check?(cat, "events", "org_id")
 
@@ -73,7 +72,8 @@ defmodule Cerbero.CatalogOverlayTest do
 
   test "alter table add/remove/modify columns updates the model" do
     cat =
-      base_catalog([table("events", %{"columns" => [column("org_id"), column("legacy")]})])
+      [table("events", %{"columns" => [column("org_id"), column("legacy")]})]
+      |> base_catalog()
       |> apply_source("""
       alter table(:events) do
         add :score, :float
@@ -93,7 +93,7 @@ defmodule Cerbero.CatalogOverlayTest do
   end
 
   test "dropped table disappears" do
-    cat = base_catalog([table("legacy")]) |> apply_source("drop table(:legacy)")
+    cat = [table("legacy")] |> base_catalog() |> apply_source("drop table(:legacy)")
     refute Catalog.known?(cat, "legacy")
   end
 

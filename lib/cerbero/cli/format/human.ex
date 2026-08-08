@@ -58,8 +58,7 @@ defmodule Cerbero.CLI.Format.Human do
     rows =
       group
       |> Enum.sort_by(&{&1.file || "", &1.line || 0})
-      |> Enum.map(&row(&1, pad))
-      |> Enum.intersperse("\n")
+      |> Enum.map_intersperse("\n", &row(&1, pad))
 
     [head, "\n", rows]
   end

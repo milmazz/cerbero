@@ -22,10 +22,11 @@ defmodule Cerbero.Check.ColumnTypeChange do
   """
   @behaviour Cerbero.Check
 
-  alias Cerbero.{Catalog, Severity}
+  alias Cerbero.Catalog
   alias Cerbero.Check.Helpers
   alias Cerbero.DDL.CRDB
   alias Cerbero.Operation, as: Op
+  alias Cerbero.Severity
 
   @impl true
   def id, do: :column_type_change
@@ -64,8 +65,7 @@ defmodule Cerbero.Check.ColumnTypeChange do
     end)
   end
 
-  defp judge(_table, _col, %{type: current}, new_type, _line, _m, _cat, _cfg)
-       when current == new_type, do: []
+  defp judge(_table, _col, %{type: current}, new_type, _line, _m, _cat, _cfg) when current == new_type, do: []
 
   defp judge(_table, _col, nil, _new, _line, _m, _cat, _cfg), do: []
 
@@ -180,8 +180,7 @@ defmodule Cerbero.Check.ColumnTypeChange do
     end
   end
 
-  defp format_type(type, _opts) when is_atom(type),
-    do: Map.get(@dsl_types, type)
+  defp format_type(type, _opts) when is_atom(type), do: Map.get(@dsl_types, type)
 
   defp format_type({:references, _, _}, _opts), do: "bigint"
 

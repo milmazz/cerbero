@@ -38,9 +38,10 @@ defmodule Cerbero.Integration.LockVerificationTest do
   """
 
   use ExUnit.Case, async: false
-  @moduletag :integration
 
   alias Cerbero.DDL.Locks
+
+  @moduletag :integration
 
   @urls %{
     130_000 => "postgres://postgres:cerbero@localhost:54313/cerbero_test",
@@ -76,38 +77,28 @@ defmodule Cerbero.Integration.LockVerificationTest do
   # whose pg_locks row is asserted on}
   @statements %{
     create_index: {nil, "CREATE INDEX lv_idx ON lv_t (x)", "lv_t"},
-    drop_index:
-      {"CREATE INDEX IF NOT EXISTS lv_drop_idx ON lv_t (x)", "DROP INDEX lv_drop_idx", "lv_t"},
+    drop_index: {"CREATE INDEX IF NOT EXISTS lv_drop_idx ON lv_t (x)", "DROP INDEX lv_drop_idx", "lv_t"},
     add_column_constant_default: {nil, "ALTER TABLE lv_t ADD COLUMN c1 int DEFAULT 0", "lv_t"},
-    add_column_volatile_default:
-      {nil, "ALTER TABLE lv_t ADD COLUMN c2 float DEFAULT random()", "lv_t"},
-    add_column_generated_stored:
-      {nil, "ALTER TABLE lv_t ADD COLUMN c3 int GENERATED ALWAYS AS (x + 1) STORED", "lv_t"},
+    add_column_volatile_default: {nil, "ALTER TABLE lv_t ADD COLUMN c2 float DEFAULT random()", "lv_t"},
+    add_column_generated_stored: {nil, "ALTER TABLE lv_t ADD COLUMN c3 int GENERATED ALWAYS AS (x + 1) STORED", "lv_t"},
     add_primary_key: {nil, "ALTER TABLE lv_nopk ADD PRIMARY KEY (id)", "lv_nopk"},
     add_unique: {nil, "ALTER TABLE lv_t ADD CONSTRAINT lv_u UNIQUE (x)", "lv_t"},
     set_not_null: {nil, "ALTER TABLE lv_t ALTER COLUMN x SET NOT NULL", "lv_t"},
     add_check: {nil, "ALTER TABLE lv_t ADD CONSTRAINT lv_c CHECK (x >= 0)", "lv_t"},
-    add_check_not_valid:
-      {nil, "ALTER TABLE lv_t ADD CONSTRAINT lv_cnv CHECK (x >= 0) NOT VALID", "lv_t"},
+    add_check_not_valid: {nil, "ALTER TABLE lv_t ADD CONSTRAINT lv_cnv CHECK (x >= 0) NOT VALID", "lv_t"},
     validate_check:
-      {"ALTER TABLE lv_t ADD CONSTRAINT lv_cv CHECK (x >= 0) NOT VALID",
-       "ALTER TABLE lv_t VALIDATE CONSTRAINT lv_cv", "lv_t"},
-    add_foreign_key:
-      {nil, "ALTER TABLE lv_t ADD CONSTRAINT lv_fk FOREIGN KEY (ref_id) REFERENCES lv_ref (id)",
+      {"ALTER TABLE lv_t ADD CONSTRAINT lv_cv CHECK (x >= 0) NOT VALID", "ALTER TABLE lv_t VALIDATE CONSTRAINT lv_cv",
        "lv_t"},
+    add_foreign_key: {nil, "ALTER TABLE lv_t ADD CONSTRAINT lv_fk FOREIGN KEY (ref_id) REFERENCES lv_ref (id)", "lv_t"},
     add_foreign_key_not_valid:
-      {nil,
-       "ALTER TABLE lv_t ADD CONSTRAINT lv_fknv FOREIGN KEY (ref_id) REFERENCES lv_ref (id) NOT VALID",
-       "lv_t"},
+      {nil, "ALTER TABLE lv_t ADD CONSTRAINT lv_fknv FOREIGN KEY (ref_id) REFERENCES lv_ref (id) NOT VALID", "lv_t"},
     validate_foreign_key:
       {"ALTER TABLE lv_t ADD CONSTRAINT lv_fkv FOREIGN KEY (ref_id) REFERENCES lv_ref (id) NOT VALID",
        "ALTER TABLE lv_t VALIDATE CONSTRAINT lv_fkv", "lv_t"},
     alter_column_type: {nil, "ALTER TABLE lv_t ALTER COLUMN x TYPE bigint", "lv_t"},
-    alter_column_type_binary_coercible:
-      {nil, "ALTER TABLE lv_t ALTER COLUMN v TYPE varchar(20)", "lv_t"},
+    alter_column_type_binary_coercible: {nil, "ALTER TABLE lv_t ALTER COLUMN v TYPE varchar(20)", "lv_t"},
     attach_partition:
-      {nil,
-       "ALTER TABLE lv_part ATTACH PARTITION lv_part_child FOR VALUES FROM ('2020-01-01') TO ('2021-01-01')",
+      {nil, "ALTER TABLE lv_part ATTACH PARTITION lv_part_child FOR VALUES FROM ('2020-01-01') TO ('2021-01-01')",
        "lv_part"},
     detach_partition:
       {"ALTER TABLE lv_part ATTACH PARTITION lv_part_child FOR VALUES FROM ('2020-01-01') TO ('2021-01-01')",

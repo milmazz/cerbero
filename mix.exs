@@ -50,6 +50,7 @@ defmodule Cerbero.MixProject do
   defp deps do
     [
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:styler, "~> 1.12", only: [:dev, :test], runtime: false},
       {:ecto_sql, "~> 3.12"},
       {:postgrex, "~> 0.19"},
       {:stream_data, "~> 1.1", only: [:test, :dev]},

@@ -6,6 +6,8 @@ defmodule Cerbero.DDL.Locks do
   applies the conservative default (AEL + rewrite + tripwire finding).
   """
 
+  alias Cerbero.DDL.Effect
+
   @pg %{
     create_index: {:share, :full_scan},
     create_index_concurrently: {:share_update_exclusive, :full_scan},
@@ -57,16 +59,13 @@ defmodule Cerbero.DDL.Locks do
   def classes, do: Map.keys(@pg) ++ [:detach_partition, :detach_partition_concurrently]
 
   @spec entry(atom(), :postgres | :cockroachdb, integer()) ::
-          {Cerbero.DDL.Effect.lock(), Cerbero.DDL.Effect.cost()} | :unmapped
-  def entry(:detach_partition, :postgres, _version_num),
-    do: {:access_exclusive, :metadata_only}
+          {Effect.lock(), Effect.cost()} | :unmapped
+  def entry(:detach_partition, :postgres, _version_num), do: {:access_exclusive, :metadata_only}
 
-  def entry(:detach_partition_concurrently, :postgres, version_num)
-      when version_num >= 140_000,
-      do: {:share_update_exclusive, :metadata_only}
+  def entry(:detach_partition_concurrently, :postgres, version_num) when version_num >= 140_000,
+    do: {:share_update_exclusive, :metadata_only}
 
-  def entry(:detach_partition_concurrently, :postgres, _version_num),
-    do: {:access_exclusive, :metadata_only}
+  def entry(:detach_partition_concurrently, :postgres, _version_num), do: {:access_exclusive, :metadata_only}
 
   def entry(class, :postgres, _version_num), do: Map.get(@pg, class, :unmapped)
 

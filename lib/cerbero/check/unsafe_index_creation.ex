@@ -2,10 +2,12 @@ defmodule Cerbero.Check.UnsafeIndexCreation do
   @moduledoc "Rule 1: non-concurrent create/drop index. Severity scales with size and traffic."
   @behaviour Cerbero.Check
 
-  alias Cerbero.{Catalog, Severity}
+  alias Cerbero.Catalog
   alias Cerbero.Check.Helpers
-  alias Cerbero.DDL.{CRDB, Effects}
+  alias Cerbero.DDL.CRDB
+  alias Cerbero.DDL.Effects
   alias Cerbero.Operation, as: Op
+  alias Cerbero.Severity
 
   @impl true
   def id, do: :unsafe_index_creation
@@ -25,9 +27,7 @@ defmodule Cerbero.Check.UnsafeIndexCreation do
   defp judge(op, migration, catalog, config) do
     op
     |> Effects.derive(catalog.engine, catalog.version_num)
-    |> Enum.filter(
-      &(&1.class in [:create_index, :add_unique, :add_primary_key, :drop_index, :reindex])
-    )
+    |> Enum.filter(&(&1.class in [:create_index, :add_unique, :add_primary_key, :drop_index, :reindex]))
     |> Enum.flat_map(fn effect ->
       table = Keyword.get(effect.relations, :target)
 
@@ -91,15 +91,13 @@ defmodule Cerbero.Check.UnsafeIndexCreation do
     end
   end
 
-  defp remediation(:drop_index, _),
-    do: "use DROP INDEX CONCURRENTLY (drop index(..., concurrently: true))"
+  defp remediation(:drop_index, _), do: "use DROP INDEX CONCURRENTLY (drop index(..., concurrently: true))"
 
   defp remediation(_create, true),
     do:
       "partitioned parent: CREATE INDEX CONCURRENTLY is unsupported through PG 18 — build per-partition indexes CONCURRENTLY, create the parent index ON ONLY, then ATTACH each partition index"
 
-  defp remediation(_create, false),
-    do: "use concurrently: true with @disable_ddl_transaction and @disable_migration_lock"
+  defp remediation(_create, false), do: "use concurrently: true with @disable_ddl_transaction and @disable_migration_lock"
 
   defp crdb_cost_finding(effect, table, migration, catalog, config) do
     with {:limited, note} <- CRDB.judge(:create_index, catalog.version_num),

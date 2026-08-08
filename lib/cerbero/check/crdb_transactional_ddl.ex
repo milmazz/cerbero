@@ -3,7 +3,8 @@ defmodule Cerbero.Check.CRDBTransactionalDDL do
   @behaviour Cerbero.Check
 
   alias Cerbero.Check.Helpers
-  alias Cerbero.DDL.{CRDB, Effects}
+  alias Cerbero.DDL.CRDB
+  alias Cerbero.DDL.Effects
 
   @impl true
   def id, do: :crdb_transactional_ddl

@@ -2,9 +2,10 @@ defmodule Cerbero.Check.ColumnDefaultRewrite do
   @moduledoc "Rule 3: volatile defaults and GENERATED STORED columns rewrite the table."
   @behaviour Cerbero.Check
 
-  alias Cerbero.{Catalog, Severity}
+  alias Cerbero.Catalog
   alias Cerbero.Check.Helpers
   alias Cerbero.DDL.Effects
+  alias Cerbero.Severity
 
   @impl true
   def id, do: :column_default_rewrite

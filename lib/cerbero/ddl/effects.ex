@@ -1,7 +1,8 @@
 defmodule Cerbero.DDL.Effects do
   @moduledoc "Operation -> [Effect]. Total: unmapped classes get the conservative default."
 
-  alias Cerbero.DDL.{Effect, Locks}
+  alias Cerbero.DDL.Effect
+  alias Cerbero.DDL.Locks
   alias Cerbero.Operation, as: Op
   alias Cerbero.SQL.Classifier.Classified
 
@@ -60,21 +61,17 @@ defmodule Cerbero.DDL.Effects do
   defp classify(%Op.DropTable{table: t}), do: [{:drop_table, [target: t]}]
   defp classify(%Op.RenameOp{table: t}), do: [{:rename, [target: t]}]
 
-  defp classify(%Op.CreateIndex{table: t, concurrently: true}),
-    do: [{:create_index_concurrently, [target: t]}]
+  defp classify(%Op.CreateIndex{table: t, concurrently: true}), do: [{:create_index_concurrently, [target: t]}]
 
-  defp classify(%Op.CreateIndex{table: t, unique: true, concurrently: false}),
-    do: [{:add_unique, [target: t]}]
+  defp classify(%Op.CreateIndex{table: t, unique: true, concurrently: false}), do: [{:add_unique, [target: t]}]
 
   defp classify(%Op.CreateIndex{table: t}), do: [{:create_index, [target: t]}]
 
-  defp classify(%Op.DropIndex{table: t, concurrently: true}),
-    do: [{:drop_index_concurrently, [target: t]}]
+  defp classify(%Op.DropIndex{table: t, concurrently: true}), do: [{:drop_index_concurrently, [target: t]}]
 
   defp classify(%Op.DropIndex{table: t}), do: [{:drop_index, [target: t]}]
 
-  defp classify(%Op.CreateConstraint{table: t, validate: false}),
-    do: [{:add_check_not_valid, [target: t]}]
+  defp classify(%Op.CreateConstraint{table: t, validate: false}), do: [{:add_check_not_valid, [target: t]}]
 
   defp classify(%Op.CreateConstraint{table: t}), do: [{:add_check, [target: t]}]
 
@@ -108,7 +105,7 @@ defmodule Cerbero.DDL.Effects do
   defp alter_class({:add_column, _name, _type, opts}, t), do: add_column_class(opts, t)
 
   defp alter_class({:modify_column, _name, type, opts}, t) do
-    type_change = if type != nil, do: [{:alter_column_type, [target: t]}], else: []
+    type_change = if type == nil, do: [], else: [{:alter_column_type, [target: t]}]
     not_null = if Keyword.get(opts, :null) == false, do: [{:set_not_null, [target: t]}], else: []
 
     fk =
@@ -142,13 +139,11 @@ defmodule Cerbero.DDL.Effects do
   defp sql_class(%Classified{class: :create_index, concurrently: true, table: t}),
     do: [{:create_index_concurrently, [target: t]}]
 
-  defp sql_class(%Classified{class: :create_index, unique: true, table: t}),
-    do: [{:add_unique, [target: t]}]
+  defp sql_class(%Classified{class: :create_index, unique: true, table: t}), do: [{:add_unique, [target: t]}]
 
   defp sql_class(%Classified{class: :create_index, table: t}), do: [{:create_index, [target: t]}]
 
-  defp sql_class(%Classified{class: :add_primary_key, table: t}),
-    do: [{:add_primary_key, [target: t]}]
+  defp sql_class(%Classified{class: :add_primary_key, table: t}), do: [{:add_primary_key, [target: t]}]
 
   defp sql_class(%Classified{class: :add_unique, table: t}), do: [{:add_unique, [target: t]}]
 
@@ -158,8 +153,7 @@ defmodule Cerbero.DDL.Effects do
   defp sql_class(%Classified{class: :add_check_is_not_null, not_valid: true, table: t}),
     do: [{:add_check_not_valid, [target: t]}]
 
-  defp sql_class(%Classified{class: :add_check_is_not_null, table: t}),
-    do: [{:add_check, [target: t]}]
+  defp sql_class(%Classified{class: :add_check_is_not_null, table: t}), do: [{:add_check, [target: t]}]
 
   defp sql_class(%Classified{class: :add_check, not_valid: nv, table: t}),
     do: [{if(nv, do: :add_check_not_valid, else: :add_check), [target: t]}]
@@ -172,13 +166,11 @@ defmodule Cerbero.DDL.Effects do
 
   # VALIDATE CONSTRAINT: FK vs CHECK is resolved by the catalog in rules;
   # here we use the stricter FK profile (SUE on referencing + ROW SHARE on referenced).
-  defp sql_class(%Classified{class: :validate_constraint, table: t}),
-    do: [{:validate_foreign_key, [target: t]}]
+  defp sql_class(%Classified{class: :validate_constraint, table: t}), do: [{:validate_foreign_key, [target: t]}]
 
   defp sql_class(%Classified{class: :set_not_null, table: t}), do: [{:set_not_null, [target: t]}]
 
-  defp sql_class(%Classified{class: :alter_column_type, table: t}),
-    do: [{:alter_column_type, [target: t]}]
+  defp sql_class(%Classified{class: :alter_column_type, table: t}), do: [{:alter_column_type, [target: t]}]
 
   defp sql_class(%Classified{class: :rename, table: t}), do: [{:rename, [target: t]}]
 
@@ -188,16 +180,11 @@ defmodule Cerbero.DDL.Effects do
   defp sql_class(%Classified{class: :attach_partition, table: parent, ref_table: part}),
     do: [{:attach_partition, [target: part] ++ if(parent, do: [referenced: parent], else: [])}]
 
-  defp sql_class(%Classified{
-         class: :detach_partition,
-         concurrently: c,
-         table: parent,
-         ref_table: part
-       }),
-       do: [
-         {if(c, do: :detach_partition_concurrently, else: :detach_partition),
-          [target: parent] ++ if(part, do: [referenced: part], else: [])}
-       ]
+  defp sql_class(%Classified{class: :detach_partition, concurrently: c, table: parent, ref_table: part}),
+    do: [
+      {if(c, do: :detach_partition_concurrently, else: :detach_partition),
+       [target: parent] ++ if(part, do: [referenced: part], else: [])}
+    ]
 
   defp sql_class(%Classified{class: :set_logged, table: t}), do: [{:set_logged, [target: t]}]
   defp sql_class(%Classified{class: :set_unlogged, table: t}), do: [{:set_unlogged, [target: t]}]
@@ -207,8 +194,7 @@ defmodule Cerbero.DDL.Effects do
   defp sql_class(%Classified{class: :add_column, volatile_default: true, table: t}),
     do: [{:add_column_volatile_default, [target: t]}]
 
-  defp sql_class(%Classified{class: :add_column, table: t}),
-    do: [{:add_column_constant_default, [target: t]}]
+  defp sql_class(%Classified{class: :add_column, table: t}), do: [{:add_column_constant_default, [target: t]}]
 
   defp sql_class(%Classified{class: :drop_column, table: t}), do: [{:drop_column, [target: t]}]
   defp sql_class(%Classified{class: :create_table, table: t}), do: [{:create_table, [target: t]}]
@@ -221,8 +207,7 @@ defmodule Cerbero.DDL.Effects do
   defp sql_class(%Classified{class: :update, table: t}), do: [{:dml_update, [target: t]}]
   defp sql_class(%Classified{class: :delete, table: t}), do: [{:dml_delete, [target: t]}]
 
-  defp sql_class(%Classified{class: :insert_select, table: t}),
-    do: [{:dml_insert_select, [target: t]}]
+  defp sql_class(%Classified{class: :insert_select, table: t}), do: [{:dml_insert_select, [target: t]}]
 
   defp sql_class(%Classified{class: :unknown}), do: [{:unclassified_sql, []}]
 end

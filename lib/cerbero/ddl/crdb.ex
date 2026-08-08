@@ -45,14 +45,10 @@ defmodule Cerbero.DDL.CRDB do
          "separate computed/generated column elsewhere in the table depends on this column"}
 
   def judge(:alter_column_type_in_txn, _v),
-    do:
-      {:rejected,
-       "CockroachDB rejects ALTER COLUMN TYPE inside an explicit transaction with other statements"}
+    do: {:rejected, "CockroachDB rejects ALTER COLUMN TYPE inside an explicit transaction with other statements"}
 
   def judge(:multiple_ddl_in_txn, _v),
-    do:
-      {:limited,
-       "multiple schema changes in one transaction are restricted; failed changes cannot roll back cleanly"}
+    do: {:limited, "multiple schema changes in one transaction are restricted; failed changes cannot roll back cleanly"}
 
   def judge(:create_index, _v),
     do: {:limited, "index builds are online but consume foreground cluster resources at scale"}
