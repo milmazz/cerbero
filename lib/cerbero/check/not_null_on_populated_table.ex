@@ -100,29 +100,37 @@ defmodule Cerbero.Check.NotNullOnPopulatedTable do
   # CockroachDB validates SET NOT NULL against existing rows with an online
   # scan (no table-level blocking lock, unlike PG's ACCESS EXCLUSIVE) — the
   # PG message's "full-table scan under ACCESS EXCLUSIVE" claim is simply
-  # false there. Tiering shared with rule 3's CRDB cost note via
-  # Helpers.crdb_cost_severity/3.
+  # false there. Tiering shared with rules 1 and 3 via Severity.assess/6's
+  # :online_schema_change clause.
   defp crdb_finding(table, column, line, migration, catalog, config) do
-    case Helpers.crdb_cost_severity(catalog, table, config) do
-      nil ->
-        []
+    severity =
+      Severity.assess(
+        :online_schema_change,
+        :full_scan,
+        Catalog.scale(catalog, table),
+        Catalog.traffic(catalog, table, config),
+        config,
+        catalog.multiplier
+      )
 
-      severity ->
-        qualified = Catalog.qualify(table)
+    if severity == :none do
+      []
+    else
+      qualified = Catalog.qualify(table)
 
-        [
-          Helpers.finding(
-            __MODULE__,
-            severity,
-            "SET NOT NULL on #{qualified}.#{column} (#{Helpers.describe_scale(catalog, table)}) " <>
-              "runs as an online validation scan on CockroachDB, consuming cluster resources at scale",
-            migration,
-            line,
-            relations: [qualified],
-            engine: :cockroachdb,
-            metadata: %{lock: :online_schema_change}
-          )
-        ]
+      [
+        Helpers.finding(
+          __MODULE__,
+          severity,
+          "SET NOT NULL on #{qualified}.#{column} (#{Helpers.describe_scale(catalog, table)}) " <>
+            "runs as an online validation scan on CockroachDB, consuming cluster resources at scale",
+          migration,
+          line,
+          relations: [qualified],
+          engine: :cockroachdb,
+          metadata: %{lock: :online_schema_change}
+        )
+      ]
     end
   end
 end

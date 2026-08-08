@@ -84,25 +84,33 @@ defmodule Cerbero.Check.ColumnDefaultRewrite do
           "a GENERATED ... STORED column (rewrites on every version)"
       end
 
-    case Helpers.crdb_cost_severity(catalog, table, config) do
-      nil ->
-        []
+    severity =
+      Severity.assess(
+        :online_schema_change,
+        :rewrite,
+        Catalog.scale(catalog, table),
+        Catalog.traffic(catalog, table, config),
+        config,
+        catalog.multiplier
+      )
 
-      severity ->
-        [
-          Helpers.finding(
-            __MODULE__,
-            severity,
-            "adding a column with #{what} on #{Catalog.qualify(table)} " <>
-              "(#{Helpers.describe_scale(catalog, table)}) triggers an online backfill that consumes " <>
-              "cluster resources at scale",
-            migration,
-            effect.line,
-            relations: [Catalog.qualify(table)],
-            engine: :cockroachdb,
-            metadata: %{lock: :online_schema_change}
-          )
-        ]
+    if severity == :none do
+      []
+    else
+      [
+        Helpers.finding(
+          __MODULE__,
+          severity,
+          "adding a column with #{what} on #{Catalog.qualify(table)} " <>
+            "(#{Helpers.describe_scale(catalog, table)}) triggers an online backfill that consumes " <>
+            "cluster resources at scale",
+          migration,
+          effect.line,
+          relations: [Catalog.qualify(table)],
+          engine: :cockroachdb,
+          metadata: %{lock: :online_schema_change}
+        )
+      ]
     end
   end
 end

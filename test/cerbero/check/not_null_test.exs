@@ -93,6 +93,26 @@ defmodule Cerbero.Check.NotNullTest do
              )
   end
 
+  test "CRDB: unknown-scale table warns — unknown is unbounded, never small" do
+    crdb = %{"engine" => %{"name" => "cockroachdb", "version" => "25.1", "version_num" => 25_100}}
+
+    unstatted =
+      table("events", %{
+        "n_live_tup" => nil,
+        "reltuples" => nil,
+        "columns" => [column("org_id")]
+      })
+
+    assert [%Finding{severity: :warning, message: msg}] =
+             judge_rule(
+               [unstatted],
+               in_alter("modify :org_id, :bigint, null: false", "events"),
+               snapshot: crdb
+             )
+
+    assert msg =~ "scale unknown — treated as unbounded"
+  end
+
   test "silent when table is born in this migration, unbackfilled" do
     # Create table and modify column in same migration: should be silent (born_this_deploy rule)
     assert [] =
