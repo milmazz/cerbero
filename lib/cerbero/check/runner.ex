@@ -60,6 +60,20 @@ defmodule Cerbero.Check.Runner do
     {List.flatten(findings), final_catalog}
   end
 
+  # Config-level policies for findings produced outside run/4 — today only
+  # SnapshotHealth's global findings, which judge the snapshot rather than
+  # a migration. Per-migration @cerbero_skip deliberately does not apply:
+  # a global finding belongs to no single migration.
+  @spec apply_policies([Finding.t()], atom(), Config.t()) :: [Finding.t()]
+  def apply_policies(findings, check_module_id, %Config{} = config) do
+    Enum.map(findings, fn finding ->
+      finding
+      |> apply_override(config)
+      |> apply_config_skip(check_module_id, config)
+      |> apply_lock_timeout_attestation(config)
+    end)
+  end
+
   defp apply_override(%Finding{} = finding, %Config{severity_overrides: overrides}) do
     case Map.fetch(overrides, finding.check) do
       {:ok, severity} -> %{finding | severity: severity}

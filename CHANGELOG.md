@@ -137,6 +137,13 @@ It does not certify migrations as safe; it judges the statement, not the moment.
 
 ### Fixed
 
+- `severity_overrides` and `skip_checks` now reach `snapshot_health` findings.
+  Those findings are produced outside the per-migration check runner (they
+  judge the snapshot, not a migration), so the documented
+  `severity_overrides: %{snapshot_health: :error}` and
+  `skip_checks: [:snapshot_health]` were silently ignored for them.
+  Per-migration `@cerbero_skip` still does not apply to global findings —
+  they belong to no single migration.
 - `mix cerbero.snapshot` now writes to `config.snapshot_path` when `--out` is
   omitted, instead of a hardcoded `priv/repo/cerbero_snapshot.json`. The two
   tasks previously disagreed on the path whenever `snapshot_path` was

@@ -244,6 +244,77 @@ defmodule Cerbero.CLI.CheckTest do
     end
   end
 
+  describe "snapshot_health policy wiring" do
+    # SnapshotHealth runs outside Runner.run/4 (it judges the snapshot, not
+    # a migration), so config policies must reach its findings explicitly.
+    # The clock makes the snapshot 45 days old -> a deterministic
+    # snapshot_health age warning exists to apply policies to.
+    defp run_stale(argv) do
+      {:ok, io} = StringIO.open("")
+      code = Check.run(argv, io: io, clock: fn -> ~U[2026-08-15 00:00:00Z] end)
+      {_, output} = StringIO.contents(io)
+      {code, output}
+    end
+
+    defp health_findings(output) do
+      output
+      |> JSON.decode!()
+      |> Map.fetch!("findings")
+      |> Enum.filter(&(&1["check"] == "snapshot_health"))
+    end
+
+    @tag :tmp_dir
+    test "severity_overrides applies to snapshot_health findings", %{tmp_dir: tmp_dir} do
+      config = Path.join(tmp_dir, ".cerbero.exs")
+      File.write!(config, "[severity_overrides: %{snapshot_health: :error}]")
+
+      {code, output} =
+        run_stale([
+          "--snapshot",
+          @snapshot,
+          "--migrations",
+          "test/fixtures/migrations/safe",
+          "--config",
+          config,
+          "--format",
+          "json"
+        ])
+
+      findings = health_findings(output)
+      assert findings != []
+      assert Enum.all?(findings, &(&1["severity"] == "error"))
+      assert code == 1
+    end
+
+    @tag :tmp_dir
+    test "skip_checks demotes snapshot_health findings to info with a reason", %{
+      tmp_dir: tmp_dir
+    } do
+      config = Path.join(tmp_dir, ".cerbero.exs")
+      File.write!(config, "[skip_checks: [:snapshot_health]]")
+
+      {_code, output} =
+        run_stale([
+          "--snapshot",
+          @snapshot,
+          "--migrations",
+          "test/fixtures/migrations/safe",
+          "--config",
+          config,
+          "--format",
+          "json"
+        ])
+
+      findings = health_findings(output)
+      assert findings != []
+
+      assert Enum.all?(
+               findings,
+               &(&1["severity"] == "info" and &1["message"] =~ "skipped via config")
+             )
+    end
+  end
+
   describe "--down" do
     @down_migration """
     defmodule DownUnsafe do

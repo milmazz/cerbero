@@ -232,6 +232,7 @@ defmodule Cerbero.CLI.Check do
 
       health =
         SnapshotHealth.run_global(snapshot, staleness, migrations, pending, catalog, config)
+        |> Runner.apply_policies(SnapshotHealth.id(), config)
 
       {findings, catalog_after_up} = Runner.run(pending, catalog, config)
       findings = health ++ findings ++ down_findings(parsed, pending, catalog_after_up, config)
