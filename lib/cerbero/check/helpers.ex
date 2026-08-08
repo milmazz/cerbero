@@ -75,20 +75,32 @@ defmodule Cerbero.Check.Helpers do
     end
   end
 
+  @doc """
+  Finding assembly for every check, in-fold or global. `source` names where
+  the finding anchors: a `%Migration{}` (only its `.file` is read — pass the
+  struct whenever one is in hand), a bare file path for callers that only
+  hold a path, or `nil` for a global finding about no file at all (e.g.
+  snapshot age). Defaults: `relations` `[]`, `engine` `nil`, `metadata` `%{}`.
+  """
   @spec finding(
           module(),
           Finding.severity(),
           String.t(),
-          Migration.t(),
+          Migration.t() | String.t() | nil,
           integer() | nil,
           keyword()
         ) :: Finding.t()
-  def finding(check_module, severity, message, %Migration{} = migration, line, opts \\ []) do
+  def finding(check_module, severity, message, source, line, opts \\ [])
+
+  def finding(check_module, severity, message, %Migration{file: file}, line, opts),
+    do: finding(check_module, severity, message, file, line, opts)
+
+  def finding(check_module, severity, message, file, line, opts) when is_binary(file) or is_nil(file) do
     %Finding{
       check: check_module.id(),
       severity: severity,
       message: message,
-      file: migration.file,
+      file: file,
       line: line,
       relations: Keyword.get(opts, :relations, []),
       engine: Keyword.get(opts, :engine),

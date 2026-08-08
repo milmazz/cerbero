@@ -17,8 +17,7 @@ defmodule Cerbero.CLI.Format.SARIF do
   # an entry falls back to the id itself.
   @spec render([Finding.t()], map(), String.t() | nil, %{String.t() => String.t()}) :: String.t()
   def render(findings, summary, snapshot_path, descriptions \\ %{}) do
-    findings =
-      Enum.sort_by(findings, &{&1.file || "", &1.line || 0, Atom.to_string(&1.check)})
+    findings = Finding.stable_sort(findings)
 
     rule_ids =
       findings |> Enum.map(&Atom.to_string(&1.check)) |> Enum.uniq() |> Enum.sort()
