@@ -138,6 +138,13 @@ It does not certify migrations as safe; it judges the statement, not the moment.
 
 ### Fixed
 
+- Snapshot mode with `start_after` no longer silently drops migration files
+  whose name carries no timestamp version. Pending selection existed twice —
+  the no-snapshot path guarded `version != nil` while the snapshot path's
+  `version <= start_after` term-compared `nil` below any string, so the same
+  unversioned file was judged in one mode and dropped in the other. Both
+  modes now share one policy (`Runner.split_pending/3`): a nil-version
+  migration is always pending, always judged.
 - Non-concurrent index builds on a CockroachDB table with unknown scale now
   warn instead of passing silently. Rule 1's CRDB cost branch pattern-matched
   on `{:rows, ...}` and its `else` swallowed `:unknown` — a direct violation
