@@ -87,6 +87,12 @@ defmodule Cerbero.Check.ColumnTypeChange do
     qualified = Catalog.qualify(table)
     scale = Catalog.scale(catalog, table)
     traffic = Catalog.traffic(catalog, table, config)
+    # coercible => :metadata_only is the same fact as the
+    # :alter_column_type_binary_coercible row in Cerbero.DDL.Locks (its
+    # layer 4 empirical anchor lives there); it is decided here as a
+    # conditional because only the check sees both the current and the new
+    # type — the SQL classifier never emits that class. If you change
+    # either site, change its twin.
     coercible = binary_coercible?(current, new_type)
     cost = if coercible, do: :metadata_only, else: :rewrite
 

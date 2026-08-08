@@ -12,7 +12,7 @@ defmodule Cerbero.CLI.Format.JSON do
       "cerbero_findings_version" => @findings_version,
       "findings" =>
         findings
-        |> Enum.sort_by(&{&1.file || "", &1.line || 0, Atom.to_string(&1.check)})
+        |> Finding.stable_sort()
         |> Enum.map(fn f ->
           %{
             "check" => Atom.to_string(f.check),

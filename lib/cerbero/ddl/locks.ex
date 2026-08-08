@@ -26,6 +26,14 @@ defmodule Cerbero.DDL.Locks do
     add_foreign_key_not_valid: {:share_row_exclusive, :metadata_only},
     validate_foreign_key: {:share_update_exclusive, :full_scan},
     alter_column_type: {:access_exclusive, :rewrite},
+    # No sql_class/1 clause emits :alter_column_type_binary_coercible today,
+    # so this row is unreachable at runtime — it exists as the empirical
+    # record of the fact (locks_test.exs and layer 4's lock_verification
+    # anchor it against live pg_locks). The SAME coercible => metadata_only
+    # fact lives as a check-local conditional in
+    # Cerbero.Check.ColumnTypeChange.pg_judge/8 (`binary_coercible?/2`
+    # drives cost), because the check knows both column types and the
+    # classifier does not. If you change either site, change its twin.
     alter_column_type_binary_coercible: {:access_exclusive, :metadata_only},
     attach_partition: {:share_update_exclusive, :full_scan},
     set_logged: {:access_exclusive, :rewrite},

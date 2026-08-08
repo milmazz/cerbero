@@ -6,6 +6,7 @@ defmodule Cerbero.Check.SnapshotHealth do
   """
 
   alias Cerbero.Catalog
+  alias Cerbero.Check.Helpers
   alias Cerbero.Config
   alias Cerbero.DDL.Effects
   alias Cerbero.Finding
@@ -52,33 +53,28 @@ defmodule Cerbero.Check.SnapshotHealth do
       stats_age_findings(snapshot, derived, catalog, config)
   end
 
-  defp finding(severity, message, opts \\ []) do
-    %Finding{
-      check: @id,
-      severity: severity,
-      message: message,
-      file: Keyword.get(opts, :file),
-      line: Keyword.get(opts, :line),
-      relations: Keyword.get(opts, :relations, [])
-    }
-  end
-
   defp age_findings(%Staleness{age_days: age}, %Config{} = c) do
     cond do
       age > c.stale_degrade_days ->
         [
-          finding(
+          Helpers.finding(
+            __MODULE__,
             :warning,
             "snapshot is #{age} days old (limit #{c.stale_degrade_days}): every row count is now " <>
-              "treated as unknown -> unbounded; risky operations fire at warning or above. Re-export"
+              "treated as unknown -> unbounded; risky operations fire at warning or above. Re-export",
+            nil,
+            nil
           )
         ]
 
       age > c.stale_warn_days ->
         [
-          finding(
+          Helpers.finding(
+            __MODULE__,
             :warning,
-            "snapshot is #{age} days old (warn threshold #{c.stale_warn_days}); re-export soon"
+            "snapshot is #{age} days old (warn threshold #{c.stale_warn_days}); re-export soon",
+            nil,
+            nil
           )
         ]
 
@@ -89,10 +85,13 @@ defmodule Cerbero.Check.SnapshotHealth do
 
   defp invalid_index_findings(%Snapshot{tables: tables}) do
     for t <- tables, idx <- t.indexes, idx.valid == false do
-      finding(
+      Helpers.finding(
+        __MODULE__,
         :warning,
         "index #{t.schema}.#{t.name}.#{idx.name} is invalid in production — likely a failed " <>
           "CONCURRENTLY build: it costs writes and provides nothing; drop and rebuild it",
+        nil,
+        nil,
         relations: ["#{t.schema}.#{t.name}"]
       )
     end
@@ -111,11 +110,13 @@ defmodule Cerbero.Check.SnapshotHealth do
             m.version != nil,
             m.version <= max_applied,
             not MapSet.member?(applied_set, m.version) do
-          finding(
+          Helpers.finding(
+            __MODULE__,
             :warning,
             "migration #{m.version} exists in the repo with version <= max(applied) but is absent from " <>
               "the snapshot's applied list — snapshot and repo disagree about history",
-            file: m.file
+            m.file,
+            nil
           )
         end
     end
@@ -133,12 +134,14 @@ defmodule Cerbero.Check.SnapshotHealth do
         version_datetime = version_to_datetime(m.version),
         version_datetime != nil,
         DateTime.diff(collected_at, version_datetime, :second) > grace_seconds do
-      finding(
+      Helpers.finding(
+        __MODULE__,
         :warning,
         "pending migration #{m.version} predates the snapshot (#{DateTime.to_date(collected_at)}) " <>
           "by more than deploy_cadence (#{config.deploy_cadence}d) — it may already be applied " <>
           "(pending vs applied-after-snapshot is offline-indistinguishable); re-export",
-        file: m.file
+        m.file,
+        nil
       )
     end
   end
@@ -154,10 +157,13 @@ defmodule Cerbero.Check.SnapshotHealth do
 
   defp standby_findings(%Snapshot{standby: true}) do
     [
-      finding(
+      Helpers.finding(
+        __MODULE__,
         :warning,
         "snapshot was taken on a hot standby: pg_stat activity counters are instance-local " <>
-          "(n_live_tup ~ 0, analyze timestamps NULL) — traffic judgments are degraded"
+          "(n_live_tup ~ 0, analyze timestamps NULL) — traffic judgments are degraded",
+        nil,
+        nil
       )
     ]
   end
@@ -196,7 +202,7 @@ defmodule Cerbero.Check.SnapshotHealth do
               "low-confidence; ANALYZE and re-export"
         end
 
-      finding(:warning, message, relations: [qualified])
+      Helpers.finding(__MODULE__, :warning, message, nil, nil, relations: [qualified])
     end
   end
 
@@ -244,12 +250,13 @@ defmodule Cerbero.Check.SnapshotHealth do
             for {_role, table} <- effect.relations,
                 is_binary(table),
                 not Catalog.known?(cat, table) do
-              finding(
+              Helpers.finding(
+                __MODULE__,
                 :error,
                 "pending migration targets #{Catalog.qualify(table)}, which is absent from the snapshot " <>
                   "and not created by the pending set — absence is never safety; re-export the snapshot",
-                file: m.file,
-                line: effect.line,
+                m.file,
+                effect.line,
                 relations: [Catalog.qualify(table)]
               )
             end

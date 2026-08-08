@@ -44,6 +44,37 @@ defmodule Cerbero.Check.SnapshotHealthTest do
     m
   end
 
+  test "health findings carry the exact shape: check id, defaults for engine/metadata, file/line only when sourced" do
+    # A global finding (age) and a located one (absent table) pin the full
+    # struct shape — SnapshotHealth builds findings through Check.Helpers,
+    # and these fields are the contract that must not drift.
+    [age] = run_health(age_days: 45)
+
+    assert %Cerbero.Finding{
+             check: :snapshot_health,
+             severity: :warning,
+             file: nil,
+             line: nil,
+             relations: [],
+             engine: nil,
+             metadata: %{}
+           } = age
+
+    findings = run_health(pending: [pending!("20260901000000", "create index(:ghost, [:x])")])
+    absent = Enum.find(findings, &(&1.severity == :error and &1.message =~ "ghost"))
+
+    assert %Cerbero.Finding{
+             check: :snapshot_health,
+             file: "20260901000000_p.exs",
+             line: line,
+             relations: ["public.ghost"],
+             engine: nil,
+             metadata: %{}
+           } = absent
+
+    assert is_integer(line)
+  end
+
   test "age past 30 days warns; fresh does not" do
     assert [] = run_health(age_days: 3)
 

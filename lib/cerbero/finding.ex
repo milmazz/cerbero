@@ -14,4 +14,13 @@ defmodule Cerbero.Finding do
 
   @spec most_severe([severity() | :none]) :: severity() | :none
   def most_severe(severities), do: Enum.max_by(severities, &Map.fetch!(@order, &1))
+
+  @doc """
+  The stable ordering contract for machine output: file, then line, then
+  check name, with global findings (nil file/line) first. Both the JSON
+  and SARIF formatters depend on this exact ordering — their outputs are
+  golden-tested byte-for-byte, so the key lives here, once.
+  """
+  @spec stable_sort([t()]) :: [t()]
+  def stable_sort(findings), do: Enum.sort_by(findings, &{&1.file || "", &1.line || 0, Atom.to_string(&1.check)})
 end
