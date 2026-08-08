@@ -13,11 +13,31 @@ defmodule Cerbero.MixProject do
       test_ignore_filters: [~r{^test/fixtures/}],
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      aliases: aliases(),
       description: description(),
       package: package(),
       source_url: @source_url,
       docs: docs()
     ]
+  end
+
+  # `mix precommit` mirrors CI's unit+lint leg so a push is never the first
+  # place a gate fails. Runs in :test (see cli/0) — the same MIX_ENV CI uses
+  # for every step.
+  defp aliases do
+    [
+      precommit: [
+        "format --check-formatted",
+        "credo --strict",
+        "compile --force --warnings-as-errors",
+        "test",
+        "docs --warnings-as-errors"
+      ]
+    ]
+  end
+
+  def cli do
+    [preferred_envs: [precommit: :test]]
   end
 
   def application do
