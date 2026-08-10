@@ -11,6 +11,7 @@ defmodule Cerbero.Check.Runner do
     [
       Cerbero.Check.UnsafeIndexCreation,
       Cerbero.Check.ConcurrentIndexRequiresAttributes,
+      Cerbero.Check.DisabledTransactionScope,
       Cerbero.Check.NotNullOnPopulatedTable,
       Cerbero.Check.ColumnDefaultRewrite,
       Cerbero.Check.ColumnTypeChange,
