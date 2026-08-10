@@ -7,12 +7,18 @@ defmodule Cerbero.Check.ColumnTypeChange do
 
   A `modify` whose target type equals the column's current type is NOT silent.
   Ecto's `modify/3` emits `ALTER COLUMN ... TYPE` regardless of whether the type
-  actually changes, so even a redundant/no-op `modify` takes ACCESS EXCLUSIVE.
+  actually changes, so even a redundant/no-op `modify` takes ACCESS EXCLUSIVE on
+  the table and on every index over the column — for a change that does nothing.
   On a hot, heavily-referenced column that lock stalls behind long-running
-  queries — a real failure mode that reads as safe in the source. It is judged
-  at metadata-only cost (no rewrite, but the lock still queues behind long
-  queries); only a catalog-aware tool can know the type is unchanged, so this
-  verdict is impossible AST-only.
+  queries, a failure mode that reads as safe in the source. It is judged at
+  metadata-only cost (no rewrite, but the lock still queues behind long queries);
+  only a catalog-aware tool can know the type is unchanged, so this verdict is
+  impossible AST-only.
+
+  This unconditional `ALTER COLUMN TYPE` — and the AccessExclusiveLocks it takes
+  on the table and each associated index even when the type is unchanged — is
+  documented upstream in elixir-ecto/ecto_sql#644; that fix was reverted in #649,
+  so `modify` still emits it and the hazard stands.
 
   CRDB: `crdb_judge/5` used to branch on whether the altered column was
   indexed, constrained, or itself a generated/stored column, treating any
