@@ -52,9 +52,37 @@ defmodule Cerbero.Check.ColumnTypeChangeTest do
     assert msg =~ "lock_timeout"
   end
 
-  test "same type: no finding" do
+  test "same type on a large table: redundant modify still takes ACCESS EXCLUSIVE (not silent)" do
+    # modify/3 emits ALTER COLUMN TYPE even when the type is unchanged — the
+    # false negative this check used to have. Metadata-only cost, but the lock
+    # is real; on the 412M-row fixture the AEL floor lifts it to a warning.
     t = events_with("bigint")
-    assert [] = judge_rule([t], "alter table(:events) do\n modify :id, :bigint\n end")
+
+    assert [%Finding{check: :column_type_change, severity: :warning, message: msg}] =
+             judge_rule([t], "alter table(:events) do\n modify :id, :bigint\n end")
+
+    assert msg =~ "redundant"
+    assert msg =~ "ACCESS EXCLUSIVE"
+    assert msg =~ "lock_timeout"
+  end
+
+  test "same type on a small cold table: never silent, floors at info" do
+    t =
+      events_with("bigint", %{
+        "n_live_tup" => 1000,
+        "reltuples" => 1000.0,
+        "heap_bytes" => 8192,
+        "idx_scan" => 0,
+        "seq_scan" => 0,
+        "n_tup_ins" => 0,
+        "n_tup_upd" => 0,
+        "n_tup_del" => 0
+      })
+
+    assert [%Finding{severity: :info, message: msg}] =
+             judge_rule([t], "alter table(:events) do\n modify :id, :bigint\n end")
+
+    assert msg =~ "redundant"
   end
 
   test "CRDB: type change on an indexed column is restricted (not rejected) — warning before deploy" do
@@ -90,7 +118,7 @@ defmodule Cerbero.Check.ColumnTypeChangeTest do
              )
   end
 
-  test "decimal(10,2) -> decimal(10,2) no-op: same type, no finding" do
+  test "decimal(10,2) -> decimal(10,2) no-op: redundant modify still judged (metadata-only AEL)" do
     t =
       events_with("numeric(10,2)", %{
         "columns" => [
@@ -98,11 +126,13 @@ defmodule Cerbero.Check.ColumnTypeChangeTest do
         ]
       })
 
-    assert [] =
+    assert [%Finding{severity: :warning, message: msg}] =
              judge_rule(
                [t],
                "alter table(:events) do\n modify :price, :decimal, precision: 10, scale: 2\n end"
              )
+
+    assert msg =~ "redundant"
   end
 
   test "unmappable custom type: no finding (false-positive guard)" do

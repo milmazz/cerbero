@@ -5,6 +5,15 @@ defmodule Cerbero.Check.ColumnTypeChange do
   Silences type changes on tables born in this deploy (not backfilled) — safe by construction.
   For unmappable DSL types (custom types), emits no finding: deliberate false-positive guard.
 
+  A `modify` whose target type equals the column's current type is NOT silent.
+  Ecto's `modify/3` emits `ALTER COLUMN ... TYPE` regardless of whether the type
+  actually changes, so even a redundant/no-op `modify` takes ACCESS EXCLUSIVE.
+  On a hot, heavily-referenced column that lock stalls behind long-running
+  queries — a real failure mode that reads as safe in the source. It is judged
+  at metadata-only cost (no rewrite, but the lock still queues behind long
+  queries); only a catalog-aware tool can know the type is unchanged, so this
+  verdict is impossible AST-only.
+
   CRDB: `crdb_judge/5` used to branch on whether the altered column was
   indexed, constrained, or itself a generated/stored column, treating any
   of those as engine-rejected. The layer 4 empirical differential
@@ -68,8 +77,6 @@ defmodule Cerbero.Check.ColumnTypeChange do
     end)
   end
 
-  defp judge(_table, _col, %{type: current}, new_type, _line, _m, _cat, _cfg) when current == new_type, do: []
-
   defp judge(_table, _col, nil, _new, _line, _m, _cat, _cfg), do: []
 
   # Guard against unmappable types: if new_type is nil, emit no finding
@@ -92,9 +99,12 @@ defmodule Cerbero.Check.ColumnTypeChange do
     # layer 4 empirical anchor lives there); it is decided here as a
     # conditional because only the check sees both the current and the new
     # type — the SQL classifier never emits that class. If you change
-    # either site, change its twin.
+    # either site, change its twin. A redundant modify (target type ==
+    # current type) is the same metadata-only cost: no rewrite, but modify/3
+    # still emits ALTER COLUMN TYPE and takes ACCESS EXCLUSIVE.
+    redundant = current == new_type
     coercible = binary_coercible?(current, new_type)
-    cost = if coercible, do: :metadata_only, else: :rewrite
+    cost = if redundant or coercible, do: :metadata_only, else: :rewrite
 
     severity =
       Severity.assess(:access_exclusive, cost, scale, traffic, config, catalog.multiplier)
@@ -103,18 +113,25 @@ defmodule Cerbero.Check.ColumnTypeChange do
       []
     else
       message =
-        if coercible do
-          "#{qualified}.#{col} #{current} -> #{new_type} is binary-coercible (metadata only) " <>
-            "but still takes ACCESS EXCLUSIVE — acquisition queues behind long-running queries; set a lock_timeout"
-        else
-          indexes = indexes_on(catalog, table, col)
+        cond do
+          redundant ->
+            "#{qualified}.#{col} is modified to its current type #{current}: modify/3 emits " <>
+              "ALTER COLUMN TYPE and takes ACCESS EXCLUSIVE even though the type is unchanged — " <>
+              "the lock queues behind long-running queries. Drop this redundant modify, or set a lock_timeout"
 
-          "#{qualified}.#{col} #{current} -> #{new_type} rewrites the table " <>
-            "(#{Helpers.describe_scale(catalog, table)}) under ACCESS EXCLUSIVE" <>
-            case indexes do
-              [] -> ""
-              names -> ", plus rebuilds of: #{Enum.join(names, ", ")}"
-            end
+          coercible ->
+            "#{qualified}.#{col} #{current} -> #{new_type} is binary-coercible (metadata only) " <>
+              "but still takes ACCESS EXCLUSIVE — acquisition queues behind long-running queries; set a lock_timeout"
+
+          true ->
+            indexes = indexes_on(catalog, table, col)
+
+            "#{qualified}.#{col} #{current} -> #{new_type} rewrites the table " <>
+              "(#{Helpers.describe_scale(catalog, table)}) under ACCESS EXCLUSIVE" <>
+              case indexes do
+                [] -> ""
+                names -> ", plus rebuilds of: #{Enum.join(names, ", ")}"
+              end
         end
 
       [
