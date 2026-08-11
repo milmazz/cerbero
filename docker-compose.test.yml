@@ -1,0 +1,13 @@
+services:
+  pg16:
+    image: postgres:16
+    environment: {POSTGRES_PASSWORD: cerbero, POSTGRES_DB: cerbero_test}
+    ports: ["54316:5432"]
+  pg13:
+    image: postgres:13
+    environment: {POSTGRES_PASSWORD: cerbero, POSTGRES_DB: cerbero_test}
+    ports: ["54313:5432"]
+  crdb:
+    image: cockroachdb/cockroach:latest-v25.1
+    command: start-single-node --insecure
+    ports: ["26257:26257"]

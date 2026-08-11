@@ -1,0 +1,66 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "properties": {
+        "summary": {
+          "errors": 1,
+          "infos": 0,
+          "snapshot": {
+            "age_days": 12,
+            "collected_at": "2026-07-01T00:00:00Z",
+            "database": "app_prod"
+          },
+          "warnings": 0
+        }
+      },
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "test/fixtures/migrations/unsafe/20260801000000_add_events_payload_index.exs",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 5
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "SHARE lock blocks writes on public.events (~412M rows, stats 2026-07-01) for a full-table scan; use concurrently: true with @disable_ddl_transaction and @disable_migration_lock"
+          },
+          "properties": {
+            "engine": "postgres",
+            "relations": [
+              "public.events"
+            ]
+          },
+          "ruleId": "unsafe_index_creation",
+          "ruleIndex": 0
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/milmazz/cerbero",
+          "name": "cerbero",
+          "rules": [
+            {
+              "id": "unsafe_index_creation",
+              "name": "unsafe_index_creation",
+              "shortDescription": {
+                "text": "Non-concurrent index creation takes a SHARE lock that blocks writes for a full-table scan"
+              }
+            }
+          ],
+          "semanticVersion": "0.1.0",
+          "version": "0.1.0"
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

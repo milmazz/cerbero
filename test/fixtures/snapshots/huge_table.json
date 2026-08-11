@@ -1,0 +1,201 @@
+{
+  "applied_migrations": [
+    "20250101000000",
+    "20250215000000",
+    "20250301000000"
+  ],
+  "cerbero_version": "0.1.0",
+  "checksum": "sha256:d72a0d6c20e26554316aaa6955804c13a17851dc8c7d2525c939f1c2bf7d6100",
+  "collected_at": "2026-07-01T00:00:00Z",
+  "database": "app_prod",
+  "engine": {
+    "name": "postgres",
+    "version": "15.4",
+    "version_num": 150004
+  },
+  "format_version": 1,
+  "standby": false,
+  "stats_provenance": "primary",
+  "stats_reset": "2026-01-01T00:00:00Z",
+  "tables": [
+    {
+      "columns": [
+        {
+          "default": {
+            "kind": "sequence",
+            "present": true,
+            "volatile": true
+          },
+          "generated": null,
+          "identity": false,
+          "name": "id",
+          "not_null": true,
+          "type": "bigint"
+        },
+        {
+          "default": null,
+          "generated": null,
+          "identity": false,
+          "name": "org_id",
+          "not_null": true,
+          "type": "bigint"
+        },
+        {
+          "default": null,
+          "generated": null,
+          "identity": false,
+          "name": "payload",
+          "not_null": false,
+          "type": "jsonb"
+        },
+        {
+          "default": {
+            "kind": "expression",
+            "present": true,
+            "volatile": true
+          },
+          "generated": null,
+          "identity": false,
+          "name": "inserted_at",
+          "not_null": true,
+          "type": "timestamp without time zone"
+        }
+      ],
+      "constraints": [
+        {
+          "columns": [
+            "id"
+          ],
+          "is_not_null_check_on": null,
+          "name": "events_pkey",
+          "on_delete": null,
+          "on_update": null,
+          "references": null,
+          "type": "primary",
+          "validated": true
+        },
+        {
+          "columns": [
+            "org_id"
+          ],
+          "is_not_null_check_on": null,
+          "name": "events_org_id_fkey",
+          "on_delete": "no_action",
+          "on_update": "no_action",
+          "references": {
+            "columns": [
+              "id"
+            ],
+            "table": "public.orgs"
+          },
+          "type": "foreign_key",
+          "validated": true
+        }
+      ],
+      "heap_bytes": 219902325555,
+      "idx_scan": 91000000,
+      "indexes": [
+        {
+          "bytes": 12884901888,
+          "keys": [
+            {
+              "kind": "column",
+              "name": "id"
+            }
+          ],
+          "method": "btree",
+          "name": "events_pkey",
+          "partial": false,
+          "primary": true,
+          "unique": true,
+          "valid": true
+        }
+      ],
+      "last_analyze": null,
+      "last_autoanalyze": "2026-07-01T00:00:00Z",
+      "n_live_tup": 412000000,
+      "n_tup_del": 20000,
+      "n_tup_ins": 96000000,
+      "n_tup_upd": 3000000,
+      "name": "events",
+      "partition_of": null,
+      "partitioned": false,
+      "relpages": 26843546,
+      "reltuples": 4.12e8,
+      "schema": "public",
+      "seq_scan": 40,
+      "total_bytes": 253403070464
+    },
+    {
+      "columns": [
+        {
+          "default": {
+            "kind": "sequence",
+            "present": true,
+            "volatile": true
+          },
+          "generated": null,
+          "identity": false,
+          "name": "id",
+          "not_null": true,
+          "type": "bigint"
+        },
+        {
+          "default": null,
+          "generated": null,
+          "identity": false,
+          "name": "name",
+          "not_null": true,
+          "type": "character varying(255)"
+        }
+      ],
+      "constraints": [
+        {
+          "columns": [
+            "id"
+          ],
+          "is_not_null_check_on": null,
+          "name": "orgs_pkey",
+          "on_delete": null,
+          "on_update": null,
+          "references": null,
+          "type": "primary",
+          "validated": true
+        }
+      ],
+      "heap_bytes": 8589934592,
+      "idx_scan": 4100000,
+      "indexes": [
+        {
+          "bytes": 1073741824,
+          "keys": [
+            {
+              "kind": "column",
+              "name": "id"
+            }
+          ],
+          "method": "btree",
+          "name": "orgs_pkey",
+          "partial": false,
+          "primary": true,
+          "unique": true,
+          "valid": true
+        }
+      ],
+      "last_analyze": null,
+      "last_autoanalyze": "2026-06-30T21:00:00Z",
+      "n_live_tup": 41000000,
+      "n_tup_del": 1000,
+      "n_tup_ins": 4000000,
+      "n_tup_upd": 900000,
+      "name": "orgs",
+      "partition_of": null,
+      "partitioned": false,
+      "relpages": 1048576,
+      "reltuples": 4.1e7,
+      "schema": "public",
+      "seq_scan": 12,
+      "total_bytes": 10737418240
+    }
+  ]
+}

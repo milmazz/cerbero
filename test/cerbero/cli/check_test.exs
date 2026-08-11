@@ -1,0 +1,631 @@
+defmodule Cerbero.CLI.CheckTest.DescribedCheck do
+  @moduledoc false
+  @behaviour Cerbero.Check
+
+  @impl true
+  def id, do: :described_check
+
+  @impl true
+  def description, do: "A third-party check that describes itself"
+
+  @impl true
+  def run(migration, _catalog, _config) do
+    [
+      %Cerbero.Finding{
+        check: :described_check,
+        severity: :warning,
+        message: "described finding",
+        file: migration.file
+      }
+    ]
+  end
+end
+
+defmodule Cerbero.CLI.CheckTest.UndescribedCheck do
+  @moduledoc false
+  @behaviour Cerbero.Check
+
+  @impl true
+  def id, do: :undescribed_check
+
+  @impl true
+  def run(migration, _catalog, _config) do
+    [
+      %Cerbero.Finding{
+        check: :undescribed_check,
+        severity: :warning,
+        message: "undescribed finding",
+        file: migration.file
+      }
+    ]
+  end
+end
+
+defmodule Cerbero.CLI.CheckTest do
+  use ExUnit.Case, async: false
+
+  alias Cerbero.CLI.Check
+  alias Cerbero.Snapshot.Signature
+  alias Cerbero.Test.SnapshotBuilder
+
+  @snapshot "test/fixtures/snapshots/huge_table.json"
+  @migrations "test/fixtures/migrations/unsafe"
+
+  # Snapshot collected_at is 2026-07-01; this clock makes it 12 days old.
+  #
+  # Not a module attribute: Elixir cannot escape/inject an anonymous
+  # function literal into a module attribute (only literals, tuples,
+  # remote captures, etc. are supported), so the clock is built by a
+  # private zero-arity function instead.
+  defp clock, do: fn -> ~U[2026-07-13 00:00:00Z] end
+
+  defp run(argv) do
+    {:ok, io} = StringIO.open("")
+    code = Check.run(argv, io: io, clock: clock())
+    {_, output} = StringIO.contents(io)
+    {code, output}
+  end
+
+  defp golden(name, actual) do
+    path = "test/golden/#{name}"
+    if System.get_env("UPDATE_GOLDEN") == "1", do: File.write!(path, actual)
+
+    assert File.read!(path) == actual,
+           "golden mismatch for #{name}; UPDATE_GOLDEN=1 to regenerate"
+  end
+
+  test "definition of done: non-concurrent index on the 412M-row table fails CI, no DB reachable" do
+    {code, output} =
+      run(["--snapshot", @snapshot, "--migrations", @migrations, "--config", "nonexistent"])
+
+    assert code == 1
+
+    assert output =~
+             "SHARE lock blocks writes on public.events (~412M rows, stats 2026-07-01) for a full-table scan"
+
+    assert output =~ "unsafe_index_creation"
+    assert output =~ "20260801000000_add_events_payload_index.exs:5"
+    assert output =~ "judged against snapshot of app_prod, 2026-07-01, 12 days old"
+  end
+
+  test "human output matches golden byte-for-byte" do
+    # Force color off so the golden is stable whether or not the test runner
+    # is attached to a TTY; the formatter emits ANSI only when enabled.
+    previous = Application.get_env(:elixir, :ansi_enabled, false)
+    Application.put_env(:elixir, :ansi_enabled, false)
+    on_exit(fn -> Application.put_env(:elixir, :ansi_enabled, previous) end)
+
+    {_code, output} =
+      run(["--snapshot", @snapshot, "--migrations", @migrations, "--config", "nonexistent"])
+
+    golden("check_human.txt", output)
+  end
+
+  test "json output matches golden and is canonically stable" do
+    {code, output} =
+      run([
+        "--snapshot",
+        @snapshot,
+        "--migrations",
+        @migrations,
+        "--config",
+        "nonexistent",
+        "--format",
+        "json"
+      ])
+
+    assert code == 1
+    golden("check_json.json", output)
+    assert %{"cerbero_findings_version" => 1, "findings" => [_ | _]} = JSON.decode!(output)
+  end
+
+  test "sarif output matches golden and anchors findings for code scanning" do
+    {code, output} =
+      run([
+        "--snapshot",
+        @snapshot,
+        "--migrations",
+        @migrations,
+        "--config",
+        "nonexistent",
+        "--format",
+        "sarif"
+      ])
+
+    assert code == 1
+    golden("check_sarif.json", output)
+
+    doc = JSON.decode!(output)
+    assert doc["version"] == "2.1.0"
+
+    [sarif_run] = doc["runs"]
+    assert sarif_run["tool"]["driver"]["name"] == "cerbero"
+    assert [result | _] = sarif_run["results"]
+    assert result["ruleId"] == "unsafe_index_creation"
+    assert result["level"] == "error"
+
+    [%{"physicalLocation" => loc}] = result["locations"]
+    assert loc["artifactLocation"]["uri"] =~ "20260801000000_add_events_payload_index.exs"
+    assert loc["region"] == %{"startLine" => 5}
+  end
+
+  test "missing snapshot is exit 2 (operational), not exit 1" do
+    {code, output} =
+      run([
+        "--snapshot",
+        "no/such/file.json",
+        "--migrations",
+        @migrations,
+        "--config",
+        "nonexistent"
+      ])
+
+    assert code == 2
+    assert output =~ "error"
+  end
+
+  test "safe migration exits 0" do
+    {code, _} =
+      run([
+        "--snapshot",
+        @snapshot,
+        "--migrations",
+        "test/fixtures/migrations/safe",
+        "--config",
+        "nonexistent"
+      ])
+
+    assert code == 0
+  end
+
+  test "--fail-on warning promotes warnings to failures" do
+    # The safe corpus has no warnings; use the unsafe one and a tighter fail-on with fresh clock
+    {code, _} =
+      run([
+        "--snapshot",
+        @snapshot,
+        "--migrations",
+        @migrations,
+        "--config",
+        "nonexistent",
+        "--fail-on",
+        "warning"
+      ])
+
+    assert code == 1
+  end
+
+  test "no-snapshot structural mode: runs, labels findings, unknown scale" do
+    {code, output} =
+      run(["--no-snapshot", "--migrations", @migrations, "--config", "nonexistent"])
+
+    assert code in [0, 1]
+    assert output =~ "no snapshot: structural checks only, scale unknown"
+  end
+
+  test "no-snapshot structural mode json: every finding records no_snapshot: true in metadata" do
+    {code, output} =
+      run([
+        "--no-snapshot",
+        "--migrations",
+        @migrations,
+        "--config",
+        "nonexistent",
+        "--format",
+        "json"
+      ])
+
+    assert code in [0, 1]
+
+    findings =
+      output
+      |> JSON.decode!()
+      |> Map.fetch!("findings")
+
+    assert findings != []
+    assert Enum.all?(findings, &(&1["metadata"]["no_snapshot"] == true))
+  end
+
+  @tag :tmp_dir
+  test "empty migrations_paths in config and no --migrations flag is exit 2, not a crash", %{
+    tmp_dir: tmp_dir
+  } do
+    path = Path.join(tmp_dir, ".cerbero.exs")
+    File.write!(path, "[migrations_paths: []]")
+
+    {code, output} = run(["--config", path])
+
+    assert code == 2
+    assert output =~ "config migrations_paths is empty; pass --migrations or fix .cerbero.exs"
+  end
+
+  test "--migrations pointing at a nonexistent directory is exit 2, not a silent all-clear" do
+    {code, output} =
+      run(["--no-snapshot", "--migrations", "no/such/dir", "--config", "nonexistent"])
+
+    assert code == 2
+    assert output =~ "migrations directory not found: no/such/dir"
+  end
+
+  @tag :tmp_dir
+  test "an existing but empty migrations directory is a valid 0-pending case", %{
+    tmp_dir: tmp_dir
+  } do
+    {code, _output} =
+      run(["--snapshot", @snapshot, "--migrations", tmp_dir, "--config", "nonexistent"])
+
+    assert code == 0
+  end
+
+  @tag :tmp_dir
+  test "a snapshot from an unsupported engine version is exit 2 (operational)", %{
+    tmp_dir: tmp_dir
+  } do
+    raw =
+      SnapshotBuilder.build(%{
+        "engine" => %{"name" => "postgres", "version" => "12.9", "version_num" => 120_000}
+      })
+
+    path = Path.join(tmp_dir, "old_engine_snapshot.json")
+    Cerbero.Snapshot.write!(raw, path)
+
+    {code, output} =
+      run(["--snapshot", path, "--migrations", @migrations, "--config", "nonexistent"])
+
+    assert code == 2
+    assert output =~ "PostgreSQL >= 13"
+  end
+
+  @tag :tmp_dir
+  test "an order-of-magnitude snapshot annotates the summary line", %{tmp_dir: tmp_dir} do
+    raw =
+      SnapshotBuilder.build(%{
+        "precision" => "order_of_magnitude",
+        "collected_at" => "2026-07-01T00:00:00Z"
+      })
+
+    path = Path.join(tmp_dir, "bucketed_snapshot.json")
+    Cerbero.Snapshot.write!(raw, path)
+
+    {code, output} =
+      run(["--snapshot", path, "--migrations", @migrations, "--config", "nonexistent"])
+
+    assert code in [0, 1]
+    assert output =~ "order-of-magnitude precision"
+  end
+
+  describe "snapshot signing" do
+    @tag :tmp_dir
+    test "snapshot_verify_keys in config rejects an unsigned snapshot at exit 2", %{
+      tmp_dir: tmp_dir
+    } do
+      {pub, _seed} = Signature.generate()
+      config = Path.join(tmp_dir, ".cerbero.exs")
+      File.write!(config, ~s|[snapshot_verify_keys: ["#{pub}"]]|)
+
+      {code, output} =
+        run(["--snapshot", @snapshot, "--migrations", @migrations, "--config", config])
+
+      assert code == 2
+      assert output =~ "unsigned"
+    end
+  end
+
+  describe "snapshot_health policy wiring" do
+    # SnapshotHealth runs outside Runner.run/4 (it judges the snapshot, not
+    # a migration), so config policies must reach its findings explicitly.
+    # The clock makes the snapshot 45 days old -> a deterministic
+    # snapshot_health age warning exists to apply policies to.
+    defp run_stale(argv) do
+      {:ok, io} = StringIO.open("")
+      code = Check.run(argv, io: io, clock: fn -> ~U[2026-08-15 00:00:00Z] end)
+      {_, output} = StringIO.contents(io)
+      {code, output}
+    end
+
+    defp health_findings(output) do
+      output
+      |> JSON.decode!()
+      |> Map.fetch!("findings")
+      |> Enum.filter(&(&1["check"] == "snapshot_health"))
+    end
+
+    @tag :tmp_dir
+    test "severity_overrides applies to snapshot_health findings", %{tmp_dir: tmp_dir} do
+      config = Path.join(tmp_dir, ".cerbero.exs")
+      File.write!(config, "[severity_overrides: %{snapshot_health: :error}]")
+
+      {code, output} =
+        run_stale([
+          "--snapshot",
+          @snapshot,
+          "--migrations",
+          "test/fixtures/migrations/safe",
+          "--config",
+          config,
+          "--format",
+          "json"
+        ])
+
+      findings = health_findings(output)
+      assert findings != []
+      assert Enum.all?(findings, &(&1["severity"] == "error"))
+      assert code == 1
+    end
+
+    @tag :tmp_dir
+    test "skip_checks demotes snapshot_health findings to info with a reason", %{
+      tmp_dir: tmp_dir
+    } do
+      config = Path.join(tmp_dir, ".cerbero.exs")
+      File.write!(config, "[skip_checks: [:snapshot_health]]")
+
+      {_code, output} =
+        run_stale([
+          "--snapshot",
+          @snapshot,
+          "--migrations",
+          "test/fixtures/migrations/safe",
+          "--config",
+          config,
+          "--format",
+          "json"
+        ])
+
+      findings = health_findings(output)
+      assert findings != []
+
+      assert Enum.all?(
+               findings,
+               &(&1["severity"] == "info" and &1["message"] =~ "skipped via config")
+             )
+
+      assert Enum.all?(findings, &(&1["metadata"]["skipped"] == %{"via" => ["config"]}))
+    end
+  end
+
+  describe "start_after and unversioned migration files" do
+    @unversioned_unsafe """
+    defmodule AppRepo.Migrations.UnversionedUnsafe do
+      use Ecto.Migration
+
+      def change do
+        create(index(:events, [:org_id, :inserted_at]))
+      end
+    end
+    """
+
+    @tag :tmp_dir
+    test "snapshot mode judges nil-version files; start_after still rejects versioned history", %{
+      tmp_dir: tmp_dir
+    } do
+      dir = Path.join(tmp_dir, "migrations")
+      File.mkdir_p!(dir)
+      # No timestamp prefix -> Parser derives version: nil. Silently
+      # dropping this file in snapshot mode was the bug (issue #4 item 3).
+      File.write!(Path.join(dir, "unversioned_add_index.exs"), @unversioned_unsafe)
+
+      File.write!(
+        Path.join(dir, "20260701000000_old_unsafe.exs"),
+        String.replace(@unversioned_unsafe, "UnversionedUnsafe", "OldUnsafe")
+      )
+
+      config = Path.join(tmp_dir, ".cerbero.exs")
+      File.write!(config, ~s|[start_after: "20260801000000"]|)
+
+      {code, output} =
+        run([
+          "--snapshot",
+          @snapshot,
+          "--migrations",
+          dir,
+          "--config",
+          config,
+          "--format",
+          "json"
+        ])
+
+      assert code == 1
+
+      files =
+        output
+        |> JSON.decode!()
+        |> Map.fetch!("findings")
+        |> Enum.filter(&(&1["check"] == "unsafe_index_creation"))
+        |> Enum.map(& &1["file"])
+
+      assert Enum.any?(files, &(&1 =~ "unversioned_add_index.exs"))
+      refute Enum.any?(files, &(&1 =~ "old_unsafe.exs"))
+    end
+  end
+
+  describe "--down" do
+    @down_migration """
+    defmodule DownUnsafe do
+      use Ecto.Migration
+      def up do
+      end
+      def down do
+        create index(:events, [:payload])
+      end
+    end
+    """
+
+    @tag :tmp_dir
+    test "down bodies are judged only with --down, and labeled", %{tmp_dir: tmp_dir} do
+      dir = Path.join(tmp_dir, "migrations")
+      File.mkdir_p!(dir)
+      File.write!(Path.join(dir, "20260801000002_down_unsafe.exs"), @down_migration)
+
+      {code_without, output_without} =
+        run(["--snapshot", @snapshot, "--migrations", dir, "--config", "nonexistent"])
+
+      assert code_without == 0
+      refute output_without =~ "unsafe_index_creation"
+
+      {code, output} =
+        run(["--snapshot", @snapshot, "--migrations", dir, "--config", "nonexistent", "--down"])
+
+      assert code == 1
+      assert output =~ "unsafe_index_creation"
+      assert output =~ "[down]"
+    end
+
+    @tag :tmp_dir
+    test "json: a downed finding records direction: down in metadata, keeping lock", %{
+      tmp_dir: tmp_dir
+    } do
+      dir = Path.join(tmp_dir, "migrations")
+      File.mkdir_p!(dir)
+      File.write!(Path.join(dir, "20260801000002_down_unsafe.exs"), @down_migration)
+
+      {code, output} =
+        run([
+          "--snapshot",
+          @snapshot,
+          "--migrations",
+          dir,
+          "--config",
+          "nonexistent",
+          "--down",
+          "--format",
+          "json"
+        ])
+
+      assert code == 1
+
+      [finding] =
+        output
+        |> JSON.decode!()
+        |> Map.fetch!("findings")
+        |> Enum.filter(&(&1["check"] == "unsafe_index_creation"))
+
+      assert finding["metadata"]["direction"] == "down"
+      # merged, not clobbered: the rule's own lock metadata survives
+      assert finding["metadata"]["lock"] == "share"
+    end
+  end
+
+  describe "check descriptions in SARIF rules" do
+    @tag :tmp_dir
+    test "an extra check exporting description/0 shows it; one without falls back to its id", %{
+      tmp_dir: tmp_dir
+    } do
+      config = Path.join(tmp_dir, ".cerbero.exs")
+
+      File.write!(config, """
+      [
+        extra_checks: [
+          Cerbero.CLI.CheckTest.DescribedCheck,
+          Cerbero.CLI.CheckTest.UndescribedCheck
+        ]
+      ]
+      """)
+
+      {_code, output} =
+        run([
+          "--snapshot",
+          @snapshot,
+          "--migrations",
+          @migrations,
+          "--config",
+          config,
+          "--format",
+          "sarif"
+        ])
+
+      [sarif_run] = JSON.decode!(output)["runs"]
+
+      by_id =
+        Map.new(sarif_run["tool"]["driver"]["rules"], &{&1["id"], &1["shortDescription"]["text"]})
+
+      assert by_id["described_check"] == "A third-party check that describes itself"
+      assert by_id["undescribed_check"] == "undescribed_check"
+      # Builtin descriptions still arrive end-to-end from the check modules.
+      assert by_id["unsafe_index_creation"] ==
+               "Non-concurrent index creation takes a SHARE lock that blocks writes for a full-table scan"
+    end
+  end
+
+  describe "multi-repo" do
+    @repos_config """
+    [
+      repos: [
+        [
+          name: "app_safe",
+          migrations_paths: ["test/fixtures/migrations/safe"],
+          snapshot_path: "test/fixtures/snapshots/huge_table.json"
+        ],
+        [
+          name: "app_unsafe",
+          migrations_paths: ["test/fixtures/migrations/unsafe"],
+          snapshot_path: "test/fixtures/snapshots/huge_table.json"
+        ]
+      ]
+    ]
+    """
+
+    defp write_repos_config(tmp_dir) do
+      path = Path.join(tmp_dir, ".cerbero.exs")
+      File.write!(path, @repos_config)
+      path
+    end
+
+    @tag :tmp_dir
+    test "no --repo: every repo runs, findings merge, worst exit code wins", %{tmp_dir: tmp_dir} do
+      {code, output} = run(["--config", write_repos_config(tmp_dir)])
+
+      assert code == 1
+      assert output =~ "unsafe_index_creation"
+      assert output =~ "app_safe"
+      assert output =~ "app_unsafe"
+    end
+
+    @tag :tmp_dir
+    test "--repo runs only the named repo", %{tmp_dir: tmp_dir} do
+      config = write_repos_config(tmp_dir)
+
+      {code, output} = run(["--config", config, "--repo", "app_safe"])
+
+      assert code == 0
+      refute output =~ "unsafe_index_creation"
+    end
+
+    @tag :tmp_dir
+    test "--repo with an unknown name is exit 2", %{tmp_dir: tmp_dir} do
+      {code, output} = run(["--config", write_repos_config(tmp_dir), "--repo", "nope"])
+
+      assert code == 2
+      assert output =~ "unknown repo"
+      assert output =~ "app_safe"
+    end
+
+    test "--repo without repos configured is exit 2" do
+      {code, output} = run(["--config", "nonexistent", "--repo", "app_safe"])
+
+      assert code == 2
+      assert output =~ "no repos configured"
+    end
+
+    @tag :tmp_dir
+    test "multi-repo json is one valid document with totals and per-repo snapshots", %{
+      tmp_dir: tmp_dir
+    } do
+      {code, output} = run(["--config", write_repos_config(tmp_dir), "--format", "json"])
+
+      assert code == 1
+      assert %{"summary" => summary} = JSON.decode!(output)
+      assert summary["errors"] >= 1
+      assert %{"app_safe" => _, "app_unsafe" => _} = summary["repos"]
+    end
+
+    @tag :tmp_dir
+    test "multi-repo sarif is one valid document", %{tmp_dir: tmp_dir} do
+      {code, output} = run(["--config", write_repos_config(tmp_dir), "--format", "sarif"])
+
+      assert code == 1
+      assert %{"version" => "2.1.0", "runs" => [run]} = JSON.decode!(output)
+      assert Enum.any?(run["results"], &(&1["ruleId"] == "unsafe_index_creation"))
+    end
+  end
+end

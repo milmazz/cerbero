@@ -1,0 +1,87 @@
+defmodule Cerbero.DDL.Locks do
+  @moduledoc """
+  The (operation class, engine, version range) -> {lock, cost} mapping.
+  This is DATA, not conditionals; layer 4's lock-verification suite is
+  its empirical anchor. Anything absent returns :unmapped and Effects
+  applies the conservative default (AEL + rewrite + tripwire finding).
+  """
+
+  alias Cerbero.DDL.Effect
+
+  @pg %{
+    create_index: {:share, :full_scan},
+    create_index_concurrently: {:share_update_exclusive, :full_scan},
+    drop_index: {:access_exclusive, :metadata_only},
+    drop_index_concurrently: {:share_update_exclusive, :metadata_only},
+    add_column_constant_default: {:access_exclusive, :metadata_only},
+    add_column_volatile_default: {:access_exclusive, :rewrite},
+    add_column_generated_stored: {:access_exclusive, :rewrite},
+    add_primary_key: {:access_exclusive, :full_scan},
+    add_unique: {:access_exclusive, :full_scan},
+    set_not_null: {:access_exclusive, :full_scan},
+    add_check: {:access_exclusive, :full_scan},
+    add_check_not_valid: {:access_exclusive, :metadata_only},
+    validate_check: {:share_update_exclusive, :full_scan},
+    add_foreign_key: {:share_row_exclusive, :full_scan},
+    add_foreign_key_not_valid: {:share_row_exclusive, :metadata_only},
+    validate_foreign_key: {:share_update_exclusive, :full_scan},
+    alter_column_type: {:access_exclusive, :rewrite},
+    # No sql_class/1 clause emits :alter_column_type_binary_coercible today,
+    # so this row is unreachable at runtime — it exists as the empirical
+    # record of the fact (locks_test.exs and layer 4's lock_verification
+    # anchor it against live pg_locks). The SAME coercible => metadata_only
+    # fact lives as a check-local conditional in
+    # Cerbero.Check.ColumnTypeChange.pg_judge/8 (`binary_coercible?/2`
+    # drives cost), because the check knows both column types and the
+    # classifier does not. If you change either site, change its twin.
+    alter_column_type_binary_coercible: {:access_exclusive, :metadata_only},
+    attach_partition: {:share_update_exclusive, :full_scan},
+    set_logged: {:access_exclusive, :rewrite},
+    set_unlogged: {:access_exclusive, :rewrite},
+    truncate: {:access_exclusive, :metadata_only},
+    # Layer 4 (empirical, PG 16): REINDEX TABLE takes ACCESS EXCLUSIVE on
+    # each index it rebuilds but only SHARE on the table itself — the same
+    # table-level lock strength as CREATE INDEX (blocks writers, not
+    # readers). This was previously {:access_exclusive, :full_scan}; that
+    # value had no live effect today (the SQL classifier doesn't attach a
+    # `target` relation to REINDEX yet, so unsafe_index_creation's
+    # relations-keyed filter always dropped it before severity was ever
+    # computed), but it was wrong on its own terms — it would have
+    # overstated severity (read+write blocking, TRUNCATE-grade) the moment
+    # that classifier gap closes, when the real behavior only blocks
+    # writers, same as CREATE INDEX.
+    reindex: {:share, :full_scan},
+    reindex_concurrently: {:share_update_exclusive, :full_scan},
+    drop_column: {:access_exclusive, :metadata_only},
+    rename: {:access_exclusive, :metadata_only},
+    set_default: {:access_exclusive, :metadata_only},
+    drop_default: {:access_exclusive, :metadata_only},
+    drop_table: {:access_exclusive, :metadata_only},
+    create_table: {:none, :metadata_only},
+    dml_update: {:row_exclusive, :full_scan},
+    dml_delete: {:row_exclusive, :full_scan},
+    dml_insert_select: {:row_exclusive, :full_scan}
+  }
+
+  @spec classes() :: [atom()]
+  def classes, do: Map.keys(@pg) ++ [:detach_partition, :detach_partition_concurrently]
+
+  @spec entry(atom(), :postgres | :cockroachdb, integer()) ::
+          {Effect.lock(), Effect.cost()} | :unmapped
+  def entry(:detach_partition, :postgres, _version_num), do: {:access_exclusive, :metadata_only}
+
+  def entry(:detach_partition_concurrently, :postgres, version_num) when version_num >= 140_000,
+    do: {:share_update_exclusive, :metadata_only}
+
+  def entry(:detach_partition_concurrently, :postgres, _version_num), do: {:access_exclusive, :metadata_only}
+
+  def entry(class, :postgres, _version_num), do: Map.get(@pg, class, :unmapped)
+
+  # CRDB: online schema changes; per-class judgment lives in Cerbero.DDL.CRDB.
+  def entry(class, :cockroachdb, _version_num) do
+    case Map.get(@pg, class, :unmapped) do
+      :unmapped -> :unmapped
+      {_lock, cost} -> {:online_schema_change, cost}
+    end
+  end
+end
