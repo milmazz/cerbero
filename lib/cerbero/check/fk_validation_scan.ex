@@ -4,9 +4,8 @@ defmodule Cerbero.Check.FKValidationScan do
 
   alias Cerbero.Catalog
   alias Cerbero.Check.Helpers
+  alias Cerbero.Check.Judgment
   alias Cerbero.DDL.Effects
-  alias Cerbero.Finding
-  alias Cerbero.Severity
 
   @impl true
   def id, do: :fk_validation_scan
@@ -28,83 +27,57 @@ defmodule Cerbero.Check.FKValidationScan do
           # Skip FKs with validate: false (add_foreign_key_not_valid) — they don't trigger a scan
           referencing = Keyword.get(effect.relations, :target)
           referenced = Keyword.get(effect.relations, :referenced)
-          judge(referencing, referenced, effect.line, migration, cat, config)
+          judge_scan(referencing, referenced, effect.line, migration, cat, config)
         end)
       end)
     end
   end
 
-  defp judge(referencing, referenced, line, migration, catalog, config) do
-    if Catalog.born_empty?(catalog, referencing) do
-      []
-    else
-      judge_scan(referencing, referenced, line, migration, catalog, config)
-    end
+  defp judge_scan(referencing, referenced, line, migration, catalog, config) do
+    q_ing = Catalog.qualify(referencing)
+    q_ed = referenced && Catalog.qualify(referenced)
+
+    Judgment.judge(
+      __MODULE__,
+      %{table: referencing, lock: :share_row_exclusive, cost: :full_scan, line: line},
+      migration,
+      catalog,
+      config,
+      # Both tables' scale matters: the referenced side's writes are blocked
+      # while the referencing side is scanned. When referenced is unknown
+      # (nil), severity comes from the referencing table alone.
+      also_assess: [referenced],
+      relations: Enum.reject([q_ing, q_ed], &is_nil/1),
+      severity: fn
+        severity when severity in [:error, :warning] -> severity
+        _ -> :suppress
+      end,
+      message: fn -> scan_message(q_ing, q_ed, referencing, referenced, catalog) end
+    )
   end
 
-  defp judge_scan(referencing, referenced, line, migration, catalog, config) do
-    scale_ing = Catalog.scale(catalog, referencing)
-    scale_ed = if referenced, do: Catalog.scale(catalog, referenced), else: :unknown
-    traffic = Catalog.traffic(catalog, referencing, config)
+  defp scan_message(q_ing, q_ed, referencing, referenced, catalog) do
+    partitioned = match?(%{partitioned: true}, Catalog.table(catalog, referencing))
 
-    # When referenced is missing, compute severity from referencing table only
-    scales = if referenced, do: [scale_ing, scale_ed], else: [scale_ing]
+    not_valid_supported =
+      not (partitioned and catalog.engine == :postgres and catalog.version_num < 180_000)
 
-    severity =
-      scales
-      |> Enum.map(
-        &Severity.assess(
-          :share_row_exclusive,
-          :full_scan,
-          &1,
-          traffic,
-          config,
-          catalog.multiplier
-        )
-      )
-      |> Finding.most_severe()
+    remediation =
+      if not_valid_supported do
+        "add the FK with validate: false (NOT VALID), then VALIDATE CONSTRAINT in a later migration " <>
+          "(SHARE UPDATE EXCLUSIVE, writes continue)"
+      else
+        "NOT VALID foreign keys on partitioned referencing tables require PG 18; " <>
+          "below that, schedule the validation scan for a maintenance window"
+      end
 
-    if severity in [:error, :warning] do
-      q_ing = Catalog.qualify(referencing)
-      q_ed = referenced && Catalog.qualify(referenced)
-
-      partitioned = match?(%{partitioned: true}, Catalog.table(catalog, referencing))
-
-      not_valid_supported =
-        not (partitioned and catalog.engine == :postgres and catalog.version_num < 180_000)
-
-      remediation =
-        if not_valid_supported do
-          "add the FK with validate: false (NOT VALID), then VALIDATE CONSTRAINT in a later migration " <>
-            "(SHARE UPDATE EXCLUSIVE, writes continue)"
-        else
-          "NOT VALID foreign keys on partitioned referencing tables require PG 18; " <>
-            "below that, schedule the validation scan for a maintenance window"
-        end
-
-      message =
-        if q_ed do
-          "ADD FOREIGN KEY: writes to #{q_ed} (#{Helpers.describe_scale(catalog, referenced)}) are blocked " <>
-            "while #{q_ing} (#{Helpers.describe_scale(catalog, referencing)}) is scanned " <>
-            "(SHARE ROW EXCLUSIVE on both). " <> remediation
-        else
-          "ADD FOREIGN KEY: #{q_ing} (#{Helpers.describe_scale(catalog, referencing)}) is scanned " <>
-            "under SHARE ROW EXCLUSIVE (referenced table unknown). " <> remediation
-        end
-
-      [
-        Helpers.finding(
-          __MODULE__,
-          severity,
-          message,
-          migration,
-          line,
-          relations: Enum.reject([q_ing, q_ed], &is_nil/1),
-          metadata: %{lock: :share_row_exclusive}
-        )
-      ]
+    if q_ed do
+      "ADD FOREIGN KEY: writes to #{q_ed} (#{Helpers.describe_scale(catalog, referenced)}) are blocked " <>
+        "while #{q_ing} (#{Helpers.describe_scale(catalog, referencing)}) is scanned " <>
+        "(SHARE ROW EXCLUSIVE on both). " <> remediation
     else
-      []
+      "ADD FOREIGN KEY: #{q_ing} (#{Helpers.describe_scale(catalog, referencing)}) is scanned " <>
+        "under SHARE ROW EXCLUSIVE (referenced table unknown). " <> remediation
     end
   end
 end

@@ -4,6 +4,7 @@ defmodule Cerbero.Check.ColumnDefaultRewrite do
 
   alias Cerbero.Catalog
   alias Cerbero.Check.Helpers
+  alias Cerbero.Check.Judgment
   alias Cerbero.DDL.Effects
   alias Cerbero.Severity
 
@@ -51,30 +52,19 @@ defmodule Cerbero.Check.ColumnDefaultRewrite do
           "a GENERATED ... STORED column (rewrites on every PG version)"
       end
 
-    scale = Catalog.scale(catalog, table)
-    traffic = Catalog.traffic(catalog, table, config)
-
-    severity =
-      Severity.assess(:access_exclusive, :rewrite, scale, traffic, config, catalog.multiplier)
-
-    if severity == :none do
-      []
-    else
-      [
-        Helpers.finding(
-          __MODULE__,
-          severity,
-          "adding a column with #{what} forces a full-table rewrite of #{Catalog.qualify(table)} " <>
-            "(#{Helpers.describe_scale(catalog, table)}) under ACCESS EXCLUSIVE. " <>
-            "Add the column without the default, backfill in batches, then set the default",
-          migration,
-          effect.line,
-          relations: [Catalog.qualify(table)],
-          engine: :postgres,
-          metadata: %{lock: :access_exclusive}
-        )
-      ]
-    end
+    Judgment.judge(
+      __MODULE__,
+      %{table: table, lock: :access_exclusive, cost: :rewrite, line: effect.line},
+      migration,
+      catalog,
+      config,
+      engine: :postgres,
+      message: fn ->
+        "adding a column with #{what} forces a full-table rewrite of #{Catalog.qualify(table)} " <>
+          "(#{Helpers.describe_scale(catalog, table)}) under ACCESS EXCLUSIVE. " <>
+          "Add the column without the default, backfill in batches, then set the default"
+      end
+    )
   end
 
   defp crdb_finding(effect, table, migration, catalog, config) do

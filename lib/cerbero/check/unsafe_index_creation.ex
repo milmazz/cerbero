@@ -4,6 +4,7 @@ defmodule Cerbero.Check.UnsafeIndexCreation do
 
   alias Cerbero.Catalog
   alias Cerbero.Check.Helpers
+  alias Cerbero.Check.Judgment
   alias Cerbero.DDL.CRDB
   alias Cerbero.DDL.Effects
   alias Cerbero.Operation, as: Op
@@ -51,48 +52,39 @@ defmodule Cerbero.Check.UnsafeIndexCreation do
   end
 
   defp pg_finding(effect, table, migration, catalog, config) do
-    scale = Catalog.scale(catalog, table)
-    traffic = Catalog.traffic(catalog, table, config)
-
-    severity =
-      Severity.assess(effect.lock, effect.cost, scale, traffic, config, catalog.multiplier)
-
+    qualified = Catalog.qualify(table)
     partitioned = match?(%{partitioned: true}, Catalog.table(catalog, table))
 
-    emit? = severity in [:error, :warning] or config.strict_concurrent_index
-
-    severity =
-      if config.strict_concurrent_index and severity in [:info, :none],
-        do: :warning,
-        else: severity
-
-    if emit? do
-      qualified = Catalog.qualify(table)
-
-      mechanism =
-        case effect.cost do
-          :full_scan ->
-            "#{Helpers.lock_name(effect.lock)} lock blocks writes on #{qualified} (#{Helpers.describe_scale(catalog, table)}) for a full-table scan"
-
-          :metadata_only ->
-            "#{Helpers.lock_name(effect.lock)} lock on #{qualified} (#{Helpers.describe_scale(catalog, table)}) queues behind long-running queries; set a lock_timeout"
+    Judgment.judge(
+      __MODULE__,
+      %{table: table, lock: effect.lock, cost: effect.cost, line: effect.line},
+      migration,
+      catalog,
+      config,
+      engine: catalog.engine,
+      # strict_concurrent_index turns the quiet verdicts (:info/:none, small
+      # or cold tables) into :warning instead of suppressing them; error and
+      # warning verdicts pass through untouched.
+      severity: fn severity ->
+        cond do
+          severity in [:error, :warning] -> severity
+          config.strict_concurrent_index -> :warning
+          true -> :suppress
         end
+      end,
+      message: fn ->
+        mechanism =
+          case effect.cost do
+            :full_scan ->
+              "#{Helpers.lock_name(effect.lock)} lock blocks writes on #{qualified} (#{Helpers.describe_scale(catalog, table)}) for a full-table scan"
 
-      [
-        Helpers.finding(
-          __MODULE__,
-          severity,
-          mechanism <> "; " <> remediation(effect.class, partitioned),
-          migration,
-          effect.line,
-          relations: [qualified],
-          engine: catalog.engine,
-          metadata: %{lock: effect.lock}
-        )
-      ]
-    else
-      []
-    end
+            :metadata_only ->
+              "#{Helpers.lock_name(effect.lock)} lock on #{qualified} (#{Helpers.describe_scale(catalog, table)}) queues behind long-running queries; set a lock_timeout"
+          end
+
+        mechanism <> "; " <> remediation(effect.class, partitioned)
+      end
+    )
   end
 
   defp remediation(:drop_index, _), do: "use DROP INDEX CONCURRENTLY (drop index(..., concurrently: true))"

@@ -10,10 +10,10 @@ defmodule Cerbero.Check.RawDDLSafety do
   while `unclassified_sql` (which only fires when classification itself
   fails) stayed silent too, since classification here *succeeded*.
 
-  This is the general-purpose judge for everything left over: it defers to
-  `Cerbero.Severity.assess/6` using the same migration-local fold +
-  born-silencing pattern as `unsafe_index_creation.ex`, so it inherits the
-  "a write-blocking-lock-taking operation is never silent" floor for free.
+  This is the general-purpose judge for everything left over: it walks the
+  shared judgment spine (`Cerbero.Check.Judgment`, extracted from this very
+  module) inside the migration-local fold, so it inherits born-silencing and
+  the "a write-blocking-lock-taking operation is never silent" floor for free.
   `TRUNCATE` gets an unconditional severity floor of `:error` regardless of
   scale (destructive, irreversible — design §4) on non-born tables.
 
@@ -26,9 +26,9 @@ defmodule Cerbero.Check.RawDDLSafety do
 
   alias Cerbero.Catalog
   alias Cerbero.Check.Helpers
+  alias Cerbero.Check.Judgment
   alias Cerbero.DDL.Effects
   alias Cerbero.Operation, as: Op
-  alias Cerbero.Severity
 
   @impl true
   def id, do: :raw_ddl_safety
@@ -111,8 +111,8 @@ defmodule Cerbero.Check.RawDDLSafety do
     |> Enum.flat_map(fn {c, effect} -> judge_effect(c, effect, migration, catalog, config) end)
   end
 
-  defp judge_effect(_c, %{class: :truncate} = effect, migration, catalog, _config) do
-    truncate_finding(effect, migration, catalog)
+  defp judge_effect(_c, %{class: :truncate} = effect, migration, catalog, config) do
+    truncate_finding(effect, migration, catalog, config)
   end
 
   defp judge_effect(c, %{class: class} = effect, migration, catalog, config) when class in @resolve_classes do
@@ -133,71 +133,37 @@ defmodule Cerbero.Check.RawDDLSafety do
   # severity floor is :error on any known, non-born table (design §4).
   # Silenced only by born-silencing (create-then-truncate the same table
   # within one pending set is fine: nothing survives to be lost).
-  defp truncate_finding(effect, migration, catalog) do
+  defp truncate_finding(effect, migration, catalog, config) do
     table = Keyword.get(effect.relations, :target)
 
-    cond do
-      table == nil ->
-        []
-
-      Catalog.born_empty?(catalog, table) ->
-        []
-
-      true ->
-        qualified = Catalog.qualify(table)
-
-        [
-          Helpers.finding(
-            __MODULE__,
-            :error,
-            "TRUNCATE #{qualified} (#{Helpers.describe_scale(catalog, table)}) is destructive and " <>
-              "irreversible — data loss with no partial-rollback story once committed. " <>
-              "ACCESS EXCLUSIVE briefly locks the table regardless of size; set a lock_timeout",
-            migration,
-            effect.line,
-            relations: [qualified],
-            engine: catalog.engine,
-            metadata: %{lock: :access_exclusive}
-          )
-        ]
-    end
+    Judgment.judge(
+      __MODULE__,
+      %{table: table, lock: effect.lock, cost: effect.cost, line: effect.line},
+      migration,
+      catalog,
+      config,
+      engine: catalog.engine,
+      severity: fn _assessed -> :error end,
+      message: fn ->
+        "TRUNCATE #{Catalog.qualify(table)} (#{Helpers.describe_scale(catalog, table)}) is destructive and " <>
+          "irreversible — data loss with no partial-rollback story once committed. " <>
+          "ACCESS EXCLUSIVE briefly locks the table regardless of size; set a lock_timeout"
+      end
+    )
   end
 
   defp generic_judge(effect, migration, catalog, config) do
     table = Keyword.get(effect.relations, :target)
 
-    cond do
-      table == nil ->
-        []
-
-      Catalog.born_empty?(catalog, table) ->
-        []
-
-      true ->
-        qualified = Catalog.qualify(table)
-        scale = Catalog.scale(catalog, table)
-        traffic = Catalog.traffic(catalog, table, config)
-
-        severity =
-          Severity.assess(effect.lock, effect.cost, scale, traffic, config, catalog.multiplier)
-
-        if severity == :none do
-          []
-        else
-          [
-            Helpers.finding(
-              __MODULE__,
-              severity,
-              mechanism(effect, qualified, catalog, table),
-              migration,
-              effect.line,
-              relations: [qualified],
-              engine: catalog.engine,
-              metadata: %{lock: effect.lock}
-            )
-          ]
-        end
-    end
+    Judgment.judge(
+      __MODULE__,
+      %{table: table, lock: effect.lock, cost: effect.cost, line: effect.line},
+      migration,
+      catalog,
+      config,
+      engine: catalog.engine,
+      message: fn -> mechanism(effect, Catalog.qualify(table), catalog, table) end
+    )
   end
 
   defp mechanism(effect, qualified, catalog, table) do
