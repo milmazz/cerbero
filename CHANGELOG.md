@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.1.1 (unreleased)
+
+### Fixed
+
+- Raw-SQL `ADD COLUMN ... GENERATED ALWAYS AS (expr) STORED` is now
+  classified as a stored generated column and judged as the full-table
+  rewrite it is — previously it classified as a constant-default add and
+  was under-judged. `GENERATED ... AS IDENTITY` and PG 18 `VIRTUAL`
+  generated columns are deliberately not flagged; neither rewrites the
+  table.
+- The never-silent net's regression test now exercises raw-SQL
+  volatile-default and stored-generated column adds with sample
+  statements. Both were listed as unreachable-from-raw-SQL: the
+  volatile-default entry had gone stale when raw-SQL volatile-default
+  detection shipped, and the stored-generated entry is closed by the
+  classifier fix above.
+
 ## v0.1.0 (2026-08-11)
 
 Initial release: cerbero detects a specific catalog-derivable class of unsafe

@@ -32,7 +32,8 @@ defmodule Cerbero.SQL.Classifier do
               not_valid: false,
               unique: false,
               ref_table: nil,
-              volatile_default: false
+              volatile_default: false,
+              generated_stored: false
 
     @type t :: %__MODULE__{}
   end
@@ -304,7 +305,8 @@ defmodule Cerbero.SQL.Classifier do
           class: :add_column,
           table: unq(m[1]),
           column: unq(m[2]),
-          volatile_default: volatile_default?(n)
+          volatile_default: volatile_default?(n),
+          generated_stored: generated_stored?(n)
         }
 
       m = run(@re_drop_column, n) ->
@@ -351,4 +353,12 @@ defmodule Cerbero.SQL.Classifier do
   # (CHECK (...), NOT NULL) don't match — the paren must open the default
   # expression itself.
   defp volatile_default?(n), do: n =~ ~r/ default (?:[a-z_][a-z0-9_$.]*)?\(/
+
+  # GENERATED ALWAYS AS (expr) STORED writes the computed value into every
+  # existing row: a full-table rewrite, same as a volatile default. The
+  # STORED keyword is required by the pattern on purpose — GENERATED ... AS
+  # IDENTITY has no expression parens (it's a sequence default, its own
+  # story), and PG 18's VIRTUAL generated columns are computed on read
+  # with no rewrite, so neither may match.
+  defp generated_stored?(n), do: n =~ ~r/ generated always as \(.*\) stored\b/
 end

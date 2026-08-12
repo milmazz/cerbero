@@ -191,6 +191,9 @@ defmodule Cerbero.DDL.Effects do
   defp sql_class(%Classified{class: :set_default, table: t}), do: [{:set_default, [target: t]}]
   defp sql_class(%Classified{class: :drop_default, table: t}), do: [{:drop_default, [target: t]}]
 
+  defp sql_class(%Classified{class: :add_column, generated_stored: true, table: t}),
+    do: [{:add_column_generated_stored, [target: t]}]
+
   defp sql_class(%Classified{class: :add_column, volatile_default: true, table: t}),
     do: [{:add_column_volatile_default, [target: t]}]
 

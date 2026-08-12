@@ -109,6 +109,24 @@ defmodule Cerbero.SQL.ClassifierTest do
              one("ALTER TABLE events ADD COLUMN flags integer")
   end
 
+  test "raw ADD COLUMN GENERATED ... STORED is flagged generated_stored" do
+    assert %Classified{class: :add_column, table: "events", column: "total", generated_stored: true} =
+             one("ALTER TABLE events ADD COLUMN total bigint GENERATED ALWAYS AS (org_id + 1) STORED")
+  end
+
+  test "raw ADD COLUMN identity, virtual-generated, and plain columns are not generated_stored" do
+    # IDENTITY is a sequence default, not a stored generated column.
+    assert %Classified{class: :add_column, generated_stored: false} =
+             one("ALTER TABLE events ADD COLUMN seq bigint GENERATED ALWAYS AS IDENTITY")
+
+    # PG 18 VIRTUAL generated columns are computed on read - no rewrite.
+    assert %Classified{class: :add_column, generated_stored: false} =
+             one("ALTER TABLE events ADD COLUMN total2 bigint GENERATED ALWAYS AS (org_id + 1) VIRTUAL")
+
+    assert %Classified{class: :add_column, generated_stored: false} =
+             one("ALTER TABLE events ADD COLUMN flags integer DEFAULT 0")
+  end
+
   test "DML detection" do
     assert %Classified{class: :update, table: "events"} = one("UPDATE events SET x = 1")
     assert %Classified{class: :delete, table: "events"} = one("DELETE FROM events WHERE x = 1")

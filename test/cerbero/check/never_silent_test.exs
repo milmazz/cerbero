@@ -49,16 +49,7 @@ defmodule Cerbero.Check.NeverSilentTest do
     # cross-referencing the catalog) — :validate_check is listed in
     # classes_emitted/0 but no sql_class clause actually produces it.
     validate_check:
-      "never emitted by Effects.sql_class — raw SQL VALIDATE CONSTRAINT always maps to :validate_foreign_key",
-    # The raw-SQL ADD COLUMN pattern has no way to see a DEFAULT
-    # expression's volatility or a GENERATED ... STORED clause — it always
-    # classifies to :add_column_constant_default (Effects.sql_class's
-    # single ADD COLUMN clause). Only the Ecto DSL path
-    # (Effects.add_column_class/1, which inspects the `default:`/
-    # `generated:` opts) can produce these two classes. Already covered by
-    # rule 3's own DSL-form tests (default_rewrite_test.exs).
-    add_column_volatile_default: "DSL-only — raw SQL ADD COLUMN always classifies as constant_default",
-    add_column_generated_stored: "DSL-only — raw SQL ADD COLUMN always classifies as constant_default"
+      "never emitted by Effects.sql_class — raw SQL VALIDATE CONSTRAINT always maps to :validate_foreign_key"
   }
 
   # One representative raw-SQL statement per reachable, qualifying class.
@@ -67,6 +58,8 @@ defmodule Cerbero.Check.NeverSilentTest do
     create_index_concurrently: ~s|CREATE INDEX CONCURRENTLY events_never_silent_idx2 ON events (org_id)|,
     drop_index: ~s|DROP INDEX events_never_silent_missing_idx|,
     add_column_constant_default: ~s|ALTER TABLE events ADD COLUMN flag integer DEFAULT 0|,
+    add_column_volatile_default: ~s|ALTER TABLE events ADD COLUMN token uuid DEFAULT gen_random_uuid()|,
+    add_column_generated_stored: ~s|ALTER TABLE events ADD COLUMN total bigint GENERATED ALWAYS AS (org_id + 1) STORED|,
     add_primary_key: ~s|ALTER TABLE events ADD PRIMARY KEY (id)|,
     add_unique: ~s|ALTER TABLE events ADD UNIQUE (org_id)|,
     set_not_null: ~s|ALTER TABLE events ALTER COLUMN org_id SET NOT NULL|,

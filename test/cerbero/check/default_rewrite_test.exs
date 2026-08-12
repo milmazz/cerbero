@@ -31,6 +31,16 @@ defmodule Cerbero.Check.DefaultRewriteTest do
     assert msg =~ "rewrite"
   end
 
+  test "raw-SQL ADD COLUMN GENERATED ... STORED gets the same rewrite error as the DSL form" do
+    assert [%Finding{check: :column_default_rewrite, severity: :error, message: msg}] =
+             judge_rule(
+               [big_events_table()],
+               ~s|execute "ALTER TABLE events ADD COLUMN total bigint GENERATED ALWAYS AS (org_id + 1) STORED"|
+             )
+
+    assert msg =~ "rewrite"
+  end
+
   test "raw-SQL ADD COLUMN with a literal default stays metadata-only: silent" do
     assert [] =
              judge_rule(
